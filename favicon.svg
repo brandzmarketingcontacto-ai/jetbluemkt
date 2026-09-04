@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#05070d" />
+  <path d="M20 16h14c6.6 0 11 4.2 11 10.4 0 4-1.9 6.9-5.1 8.5 4 1.4 6.4 4.6 6.4 9 0 6.7-4.8 10.9-11.7 10.9H20V16z" fill="none" />
+  <text x="32" y="43" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="30" fill="#4f8cff">J</text>
+</svg>
