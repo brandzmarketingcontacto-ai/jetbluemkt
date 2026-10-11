@@ -1,0 +1,2 @@
+# Nadie debe leer la configuración ni el código interno desde el navegador.
+Require all denied

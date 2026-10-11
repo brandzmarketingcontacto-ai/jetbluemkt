@@ -1,0 +1,5 @@
+# Credenciales de MySQL generadas por install.php
+inc/config.php
+# Imágenes subidas desde el panel
+uploads/*
+!uploads/.htaccess
