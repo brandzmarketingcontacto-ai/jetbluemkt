@@ -449,7 +449,7 @@ function drawSectionEditor() {
       <label class="field">Nombre interno<input data-f="name" value="${esc(s.name)}"></label>
       <label class="field">Texto pequeño superior<input data-f="eyebrow" value="${esc(s.eyebrow)}" placeholder="Opcional"></label>
     </div>
-    <label class="field">Título<input data-f="title" value="${esc(s.title)}" style="font-size:18px;font-weight:700"></label>
+    <label class="field">Título<input data-f="title" value="${esc(s.title)}" style="font-size:18px;font-weight:700"><small>Escribe *entre asteriscos* la parte que quieras resaltar en cursiva de color.</small></label>
     <div class="field"><span id="rte-label">Contenido</span><div id="rte"></div>
       ${s.kind === 'valor' ? '<small>Cada elemento de la lista es un beneficio; el texto en negrita se muestra grande.</small>' : ''}
       ${s.kind === 'como' ? '<small>Cada elemento de la lista numerada es un paso; usa H3 para el título de cada paso.</small>' : ''}

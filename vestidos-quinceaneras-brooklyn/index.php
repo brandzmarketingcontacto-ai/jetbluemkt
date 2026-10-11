@@ -46,6 +46,12 @@ function section_link(array $s, string $waCita): string
     }
 }
 
+/** Título escapado; lo escrito entre *asteriscos* se resalta en cursiva de color. */
+function title_html(string $t): string
+{
+    return preg_replace('/\*(.+?)\*/u', '<em>$1</em>', e($t)) ?? e($t);
+}
+
 function img_src(string $url): string
 {
     return e(safe_url($url));
@@ -65,15 +71,18 @@ $desc = plain_text($sections[0]['body'] ?? '') ?: setting('tagline');
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= e($siteTitle) ?> — Vestidos de XV desde $999</title>
+<meta name="theme-color" content="#2B0B1E">
 <meta name="description" content="<?= e(mb_substr($desc, 0, 160)) ?>">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="es_US">
 <meta property="og:title" content="<?= e($siteTitle) ?>">
 <meta property="og:description" content="<?= e(mb_substr($desc, 0, 160)) ?>">
 <meta property="og:image" content="<?= img_src($sections[0]['image'] ?? setting('logo')) ?>">
 <link rel="icon" href="<?= img_src(setting('logo', 'assets/img/logo.png')) ?>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,500;0,6..96,700;1,6..96,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/site.css?v=1">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/site.css?v=4">
 </head>
 <body>
 
@@ -84,6 +93,13 @@ $desc = plain_text($sections[0]['body'] ?? '') ?: setting('tagline');
 <header class="header">
   <nav class="wrap nav">
     <a href="#inicio" class="brand" aria-label="<?= e($siteTitle) ?> — inicio"><img src="<?= img_src(setting('logo', 'assets/img/logo.png')) ?>" alt="<?= e($siteTitle) ?>"></a>
+    <details class="menu">
+      <summary aria-label="Abrir menú"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>Menú</summary>
+      <div class="menu-panel">
+        <?php foreach ($nav as $id => $label): ?><a href="#<?= e($id) ?>"><?= e($label) ?></a><?php endforeach; ?>
+        <a href="<?= e(wa_link()) ?>">WhatsApp <?= e(setting('whatsapp')) ?></a>
+      </div>
+    </details>
     <div class="nav-links">
       <?php foreach ($nav as $id => $label): ?><a href="#<?= e($id) ?>"><?= e($label) ?></a><?php endforeach; ?>
       <a class="btn btn-sm" href="<?= e($waCita) ?>">Agendar cita</a>
@@ -104,7 +120,7 @@ $desc = plain_text($sections[0]['body'] ?? '') ?: setting('tagline');
   <div class="wrap hero-grid">
     <div class="hero-copy">
       <?php if ($s['eyebrow'] !== ''): ?><span class="pill"><?= e($s['eyebrow']) ?></span><?php endif; ?>
-      <h1><?= e($s['title']) ?></h1>
+      <h1><?= title_html($s['title']) ?></h1>
       <div class="rich lead"><?= $s['body'] ?></div>
       <div class="actions">
         <?php if ($s['cta'] !== ''): ?><a class="btn btn-lg" href="<?= e($link) ?>"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 21l2.1-5.4A8.4 8.4 0 1 1 21 11.5z"/></svg><?= e($s['cta']) ?></a><?php endif; ?>
@@ -132,9 +148,9 @@ $desc = plain_text($sections[0]['body'] ?? '') ?: setting('tagline');
 <section id="<?= $id ?>" class="block <?= $bg ?>">
   <div class="wrap">
     <div class="block-head">
-      <div>
+      <div class="head-copy">
         <?php if ($s['eyebrow'] !== ''): ?><span class="eyebrow"><?= e($s['eyebrow']) ?></span><?php endif; ?>
-        <h2><?= e($s['title']) ?></h2>
+        <h2><?= title_html($s['title']) ?></h2>
         <div class="rich muted"><?= $s['body'] ?></div>
       </div>
       <div class="chips" role="group" aria-label="Filtrar por estilo">
@@ -168,9 +184,9 @@ $desc = plain_text($sections[0]['body'] ?? '') ?: setting('tagline');
 <section id="<?= $id ?>" class="block <?= $bg ?>">
   <div class="wrap">
     <div class="block-head">
-      <div>
+      <div class="head-copy">
         <?php if ($s['eyebrow'] !== ''): ?><span class="eyebrow"><?= e($s['eyebrow']) ?></span><?php endif; ?>
-        <h2><?= e($s['title']) ?></h2>
+        <h2><?= title_html($s['title']) ?></h2>
         <div class="rich muted"><?= $s['body'] ?></div>
       </div>
       <?php if ($s['cta'] !== ''): ?><a class="link-strong" href="<?= e($link) ?>"><?= e($s['cta']) ?> →</a><?php endif; ?>
@@ -189,7 +205,7 @@ $desc = plain_text($sections[0]['body'] ?? '') ?: setting('tagline');
   <div class="wrap">
     <div class="block-head center-head">
       <?php if ($s['eyebrow'] !== ''): ?><span class="eyebrow"><?= e($s['eyebrow']) ?></span><?php endif; ?>
-      <h2><?= e($s['title']) ?></h2>
+      <h2><?= title_html($s['title']) ?></h2>
     </div>
     <div class="rich steps"><?= $s['body'] ?></div>
   </div>
@@ -202,7 +218,7 @@ $desc = plain_text($sections[0]['body'] ?? '') ?: setting('tagline');
     <div class="visit">
       <div class="visit-copy">
         <?php if ($s['eyebrow'] !== ''): ?><span class="eyebrow"><?= e($s['eyebrow']) ?></span><?php endif; ?>
-        <h2><?= e($s['title']) ?></h2>
+        <h2><?= title_html($s['title']) ?></h2>
         <div class="rich hours"><?= $s['body'] ?></div>
         <p class="addr"><strong><?= e(setting('address')) ?></strong><br>WhatsApp <a href="<?= e(wa_link()) ?>"><?= e(setting('whatsapp')) ?></a><?php if (setting('phone2') !== ''): ?> · Tel. <a href="tel:+1<?= e(digits(setting('phone2'))) ?>"><?= e(setting('phone2')) ?></a><?php endif; ?></p>
         <div class="actions">
@@ -226,7 +242,7 @@ $desc = plain_text($sections[0]['body'] ?? '') ?: setting('tagline');
     <?php endif; ?>
     <div class="salon-copy">
       <?php if ($s['eyebrow'] !== ''): ?><span class="eyebrow gold"><?= e($s['eyebrow']) ?></span><?php endif; ?>
-      <h2><?= e($s['title']) ?></h2>
+      <h2><?= title_html($s['title']) ?></h2>
       <div class="rich"><?= $s['body'] ?></div>
       <div class="tags">
         <span>XV años</span><span>Bodas</span><span>Bautizos</span><span>Cumpleaños</span>
@@ -245,7 +261,7 @@ $desc = plain_text($sections[0]['body'] ?? '') ?: setting('tagline');
     case 'faq': ?>
 <section id="<?= $id ?>" class="block <?= $bg ?>">
   <div class="wrap narrow">
-    <h2 class="center-text"><?= e($s['title']) ?></h2>
+    <h2 class="center-text"><?= title_html($s['title']) ?></h2>
     <?php if (plain_text($s['body']) !== ''): ?><div class="rich muted center-text"><?= $s['body'] ?></div><?php endif; ?>
     <div class="faqs">
       <?php foreach ($faqs as $i => $f): ?>
@@ -260,7 +276,7 @@ $desc = plain_text($sections[0]['body'] ?? '') ?: setting('tagline');
 <section id="<?= $id ?>" class="block">
   <div class="wrap">
     <div class="cta-box <?= $bg ?>">
-      <h2><?= e($s['title']) ?></h2>
+      <h2><?= title_html($s['title']) ?></h2>
       <div class="rich"><?= $s['body'] ?></div>
       <?php if ($s['cta'] !== ''): ?><a class="btn btn-lg btn-invert" href="<?= e($link) ?>"><?= e($s['cta']) ?></a><?php endif; ?>
     </div>
@@ -271,7 +287,7 @@ $desc = plain_text($sections[0]['body'] ?? '') ?: setting('tagline');
     case 'equipo': ?>
 <section id="<?= $id ?>" class="block tight <?= $bg ?>">
   <div class="wrap">
-    <div class="team"><div><strong><?= e($s['title']) ?></strong> <span class="rich inline"><?= $s['body'] ?></span></div><?php if ($s['cta'] !== ''): ?><a class="link-strong" href="<?= e($link) ?>"><?= e($s['cta']) ?> →</a><?php endif; ?></div>
+    <div class="team"><div><strong><?= title_html($s['title']) ?></strong> <span class="rich inline"><?= $s['body'] ?></span></div><?php if ($s['cta'] !== ''): ?><a class="link-strong" href="<?= e($link) ?>"><?= e($s['cta']) ?> →</a><?php endif; ?></div>
   </div>
 </section>
 <?php break;
@@ -282,7 +298,7 @@ $desc = plain_text($sections[0]['body'] ?? '') ?: setting('tagline');
     <?php if ($s['image'] !== ''): ?><div class="custom-img"><img src="<?= img_src($s['image']) ?>" alt="" loading="lazy"></div><?php endif; ?>
     <div class="custom-copy">
       <?php if ($s['eyebrow'] !== ''): ?><span class="eyebrow"><?= e($s['eyebrow']) ?></span><?php endif; ?>
-      <h2><?= e($s['title']) ?></h2>
+      <h2><?= title_html($s['title']) ?></h2>
       <div class="rich"><?= $s['body'] ?></div>
       <?php if ($s['cta'] !== ''): ?><div class="actions"><a class="btn" href="<?= e($link) ?>"><?= e($s['cta']) ?></a></div><?php endif; ?>
     </div>
@@ -325,7 +341,7 @@ endforeach; ?>
   </form>
 </dialog>
 
-<script src="assets/js/site.js?v=1"></script>
+<script src="assets/js/site.js?v=4"></script>
 <?php if (isset($_GET['login'])): ?><script>document.getElementById('admin-dialog').showModal();</script><?php endif; ?>
 </body>
 </html>

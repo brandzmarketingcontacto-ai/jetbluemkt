@@ -1,7 +1,7 @@
 :root{
   --fucsia:#C2185B;--fucsia-dk:#8E0F43;--ciruela:#2B0B1E;--oro:#B8892E;
   --bg:#F6EFF3;--line:#EBD6DF;--line2:#E3C3D1;--soft:#FFF8FB;--muted:#6B4A5C;
-  --sans:'Manrope',system-ui,sans-serif;--serif:'Bodoni Moda',Georgia,serif;
+  --sans:'Manrope',system-ui,sans-serif;--serif:'Playfair Display',Georgia,serif;
 }
 *{box-sizing:border-box}
 body{margin:0;font-family:var(--sans);color:var(--ciruela);background:var(--bg);line-height:1.45}

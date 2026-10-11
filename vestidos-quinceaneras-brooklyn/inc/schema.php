@@ -99,7 +99,7 @@ function seed_database(PDO $pdo): void
     }
 
     $sections = [
-        ['hero', 'hero', 'Portada', 'Confeccionados y diseñados en México', 'El vestido de tus XV, desde $999.',
+        ['hero', 'hero', 'Portada', 'Confeccionados y diseñados en México', 'El vestido de tus XV, *desde $999.*',
             '<p>Bordados, brillo y vuelo de princesa sin pagar de más. Ven a probártelos en Brooklyn con atención personalizada, por cita y sin prisas.</p>',
             'Agendar cita por WhatsApp', 'wa', 'claro', $img('rosa-encanto.jpg')],
         ['valor', 'valor', 'Franja de beneficios', '', 'Por qué elegirnos',
