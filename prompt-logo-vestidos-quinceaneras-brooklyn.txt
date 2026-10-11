@@ -1,0 +1,45 @@
+PROMPT PARA GENERAR EL LOGO EN CHATGPT (generador de imágenes)
+Negocio: Vestidos para Quinceañeras Brooklyn
+Copia y pega el bloque que quieras. Recomendado: empieza por la OPCIÓN 1.
+
+======================================================================
+OPCIÓN 1 — LOGO PRINCIPAL (monograma + nombre)
+======================================================================
+
+Diseña un logotipo profesional y elegante para una boutique de vestidos de quinceañera llamada "Vestidos para Quinceañeras Brooklyn".
+
+Concepto: un monograma "XV" en tipografía serif de alto contraste (estilo Bodoni / Didot), con la "X" y la "V" entrelazadas de forma refinada. Sobre el monograma, una pequeña tiara/corona delicada de línea fina. Integra sutilmente la silueta de un vestido de quinceañera de falda amplia (ball gown) formada por el espacio negativo o por una línea continua que nace de la "V".
+
+Texto debajo del monograma, centrado:
+- Línea 1: "Vestidos para Quinceañeras" en serif elegante, mayúsculas y minúsculas.
+- Línea 2: "BROOKLYN" en sans-serif geométrica, todo en mayúsculas, con mucho espaciado entre letras (tracking amplio), más pequeña.
+
+Paleta de colores (usa solo estos):
+- Fucsia profundo #C2185B (color principal)
+- Ciruela oscuro #2B0B1E (texto)
+- Dorado suave #B8892E (detalles: tiara y línea fina)
+Fondo blanco liso.
+
+Estilo: minimalista, de lujo, femenino pero moderno, tipo marca de alta costura. Diseño plano (flat), vectorial, limpio, con bordes nítidos. Sin degradados, sin sombras, sin efectos 3D, sin brillos, sin texturas, sin fotos, sin personas, sin flores recargadas, sin mockups. Que funcione bien en tamaño pequeño (foto de perfil de Facebook/Instagram) y en un letrero.
+
+Composición: centrada, simétrica, con buen margen alrededor. Formato cuadrado 1:1. Ortografía exacta del texto, incluyendo la "ñ" y la tilde: "Quinceañeras".
+
+======================================================================
+OPCIÓN 2 — SOLO ÍCONO (para foto de perfil y botón de WhatsApp)
+======================================================================
+
+Diseña un ícono de marca circular para la boutique "Vestidos para Quinceañeras Brooklyn". Dentro de un círculo fucsia profundo #C2185B, un monograma "XV" en serif de alto contraste color blanco, con una pequeña tiara dorada #B8892E encima. Estilo plano, vectorial, minimalista y de lujo. Sin texto adicional, sin degradados, sin sombras, sin 3D. Fondo blanco, formato cuadrado 1:1, centrado, legible a tamaño muy pequeño.
+
+======================================================================
+OPCIÓN 3 — VERSIÓN HORIZONTAL (para el encabezado del sitio web)
+======================================================================
+
+Diseña la versión horizontal del logotipo "Vestidos para Quinceañeras Brooklyn": a la izquierda, un ícono circular fucsia #C2185B con el monograma "XV" blanco en serif y una pequeña tiara dorada #B8892E; a la derecha, el texto en dos líneas alineado a la izquierda: "Vestidos para Quinceañeras" en serif elegante color ciruela #2B0B1E y debajo "BROOKLYN" en sans-serif mayúsculas con tracking amplio en fucsia #C2185B. Estilo plano, vectorial, limpio, de lujo. Sin degradados, sin sombras, sin 3D. Fondo blanco, formato horizontal 3:1. Ortografía exacta: "Quinceañeras".
+
+======================================================================
+CONSEJOS
+======================================================================
+- Si el texto sale con errores, pide: "Corrige la ortografía, el texto debe decir exactamente: Vestidos para Quinceañeras / BROOKLYN".
+- Para fondo transparente pide: "Misma imagen con fondo transparente en PNG".
+- Para versión en negativo pide: "Misma versión en blanco y dorado sobre fondo ciruela #2B0B1E".
+- Para el sitio web lo ideal es luego vectorizar el logo (SVG) con una herramienta como Vectorizer.ai o pedirlo a un diseñador.
