@@ -1,6 +1,6 @@
 :root{
   --fucsia:#C2185B;--fucsia-dk:#8E0F43;--ciruela:#2B0B1E;--ciruela-dk:#1C0714;
-  --oro:#B8892E;--oro-cl:#E9C77F;--fondo:#FFF6F9;--rosa:#FBE1EC;--borde:#F3D3E0;
+  --oro:#B8892E;--oro-cl:#E9C77F;--oro-grad:linear-gradient(115deg,#8A6420 0%,#D4A944 22%,#F8E7A8 45%,#C9963A 68%,#F1D58A 88%,#A87A2A 100%);--fondo:#FFF6F9;--rosa:#FBE1EC;--borde:#F3D3E0;
   --texto2:#5A3348;--verde:#0E7A3E;
   --serif:'Playfair Display',Georgia,serif;--sans:'Manrope',system-ui,sans-serif;
 }
@@ -23,7 +23,8 @@ h1,h2,h3{margin:0}
 .btn-lg{min-height:56px;padding:0 28px;font-size:17px}
 .btn-outline{background:transparent;color:var(--ciruela);border-color:var(--ciruela)}
 .btn-outline:hover{color:var(--ciruela);box-shadow:none}
-.btn-gold{background:var(--oro-cl);color:var(--ciruela-dk)}
+.btn-gold{background:var(--oro-grad);background-size:200% 100%;color:var(--ciruela-dk);box-shadow:inset 0 1px 0 rgba(255,255,255,.5)}
+.btn-gold:hover{background-position:100% 0}
 .btn-gold:hover{color:var(--ciruela-dk)}
 .btn-ghost-light{background:transparent;color:#fff;border-color:#fff}
 .btn-invert{background:#fff;color:var(--fucsia-dk)}
@@ -191,11 +192,14 @@ h1,h2,h3{margin:0}
 .admin-btn:hover{background:#3C1530}
 
 /* WhatsApp flotante */
-.wa-float{position:fixed;right:20px;bottom:20px;z-index:50;display:flex;align-items:center;gap:10px;background:var(--verde);color:#fff;text-decoration:none;padding:14px 20px 14px 16px;border-radius:999px;font-weight:800;font-size:16px;animation:pulse 2.4s ease-in-out infinite}
-.wa-float:hover{color:#fff}
-@keyframes pulse{0%,100%{box-shadow:0 8px 24px rgba(14,122,62,.35),0 0 0 0 rgba(14,122,62,.35)}50%{box-shadow:0 8px 24px rgba(14,122,62,.35),0 0 0 12px rgba(14,122,62,0)}}
-@media (max-width:560px){.wa-float span{display:none}.wa-float{padding:16px}}
-@media (prefers-reduced-motion:reduce){.wa-float{animation:none}*{scroll-behavior:auto}}
+.wa-float{position:fixed;right:20px;bottom:20px;z-index:50;display:flex;align-items:center;gap:10px;background:#0E7A3E;color:#fff;text-decoration:none;padding:14px 20px 14px 16px;border-radius:999px;font-weight:800;font-size:16px;box-shadow:0 10px 28px rgba(14,122,62,.4);animation:wa-beat 2.2s ease-in-out infinite}
+.wa-float:hover{color:#fff;animation-play-state:paused;transform:scale(1.05)}
+.wa-float svg{flex:none}
+.wa-ring{position:absolute;inset:0;border-radius:inherit;border:2px solid #25D366;pointer-events:none;animation:wa-ring 2.2s ease-out infinite}
+@keyframes wa-beat{0%,100%{transform:scale(1)}10%{transform:scale(1.08)}20%{transform:scale(.98)}30%{transform:scale(1.05)}45%{transform:scale(1)}}
+@keyframes wa-ring{0%{opacity:.9;transform:scale(1)}70%,100%{opacity:0;transform:scale(1.35,1.6)}}
+@media (max-width:560px){.wa-label{display:none}.wa-float{padding:16px;right:16px;bottom:16px}}
+@media (prefers-reduced-motion:reduce){.wa-ring{animation:none;opacity:0}.wa-float{animation-duration:4s}*{scroll-behavior:auto}}
 
 /* Acceso admin */
 .login{border:0;border-radius:24px;padding:0;width:min(380px,calc(100% - 32px));box-shadow:0 30px 80px rgba(0,0,0,.35)}
@@ -279,3 +283,11 @@ h1 em,h2 em,.team strong em{font-style:italic;font-weight:500;color:var(--fucsia
   .badge-price strong{font-size:34px}
   .inset{width:104px}
 }
+
+/* Dorado en gradiente (texto) */
+.badge-price small,.band-list li strong,.eyebrow.gold,.bg-fucsia .eyebrow,.bg-ciruela .eyebrow,.bg-fucsia h2 em,.bg-ciruela h2 em,.salon h2 em,.badge-price strong{background:var(--oro-grad);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
+.badge-price strong{background:linear-gradient(115deg,#FFF6DA,#F3D98B 40%,#FFFFFF 55%,#E9C77F 80%);-webkit-background-clip:text;background-clip:text}
+.salon-img .ema{border:3px solid transparent;background:linear-gradient(#000,#000) padding-box,var(--oro-grad) border-box}
+.checks li:before{border-image:var(--oro-grad) 1}
+.badge-price{border:1px solid transparent;background:linear-gradient(var(--ciruela),var(--ciruela)) padding-box,var(--oro-grad) border-box}
+.bg-claro .band-list li strong,.bg-rosa .band-list li strong{background:none;-webkit-text-fill-color:var(--fucsia);color:var(--fucsia)}

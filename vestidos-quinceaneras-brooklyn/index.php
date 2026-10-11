@@ -6,6 +6,9 @@ declare(strict_types=1);
 require __DIR__ . '/inc/bootstrap.php';
 require_installed('install.php');
 $csrf = csrf_token(); // Inicia la sesión antes de enviar cualquier HTML.
+// La página cambia desde el panel: que ni el navegador ni la caché de Hostinger (LiteSpeed) guarden una copia vieja.
+header('Cache-Control: no-cache, must-revalidate');
+header('X-LiteSpeed-Cache-Control: no-cache');
 
 $pdo = db();
 $sections = $pdo->query('SELECT * FROM sections WHERE visible = 1 ORDER BY position, id')->fetchAll();
@@ -47,9 +50,17 @@ function section_link(array $s, string $waCita): string
 }
 
 /** Título escapado; lo escrito entre *asteriscos* se resalta en cursiva de color. */
-function title_html(string $t): string
+function title_html(string $t, bool $autoAccent = false): string
 {
-    return preg_replace('/\*(.+?)\*/u', '<em>$1</em>', e($t)) ?? e($t);
+    $h = e($t);
+    if (str_contains($t, '*')) {
+        return preg_replace('/\*(.+?)\*/u', '<em>$1</em>', $h) ?? $h;
+    }
+    // Portada sin asteriscos: resalta desde la palabra "desde" (ej. "desde $999.").
+    if ($autoAccent && preg_match('/^(.*?)(\bdesde\b.*)$/iu', $h, $m)) {
+        return $m[1] . '<em>' . $m[2] . '</em>';
+    }
+    return $h;
 }
 
 function img_src(string $url): string
@@ -77,12 +88,27 @@ $desc = plain_text($sections[0]['body'] ?? '') ?: setting('tagline');
 <meta property="og:locale" content="es_US">
 <meta property="og:title" content="<?= e($siteTitle) ?>">
 <meta property="og:description" content="<?= e(mb_substr($desc, 0, 160)) ?>">
-<meta property="og:image" content="<?= img_src($sections[0]['image'] ?? setting('logo')) ?>">
-<link rel="icon" href="<?= img_src(setting('logo', 'assets/img/logo.png')) ?>">
+<meta property="og:image" content="<?= e(base_url() . safe_url($sections[0]['image'] ?? setting('logo'))) ?>">
+<meta property="og:url" content="<?= e(base_url()) ?>">
+<link rel="canonical" href="<?= e(base_url()) ?>">
+<link rel="icon" type="image/png" href="<?= e(asset('assets/img/icon.png')) ?>">
+<link rel="apple-touch-icon" href="<?= e(asset('assets/img/icon.png')) ?>">
+<script type="application/ld+json"><?= json_encode([
+    '@context' => 'https://schema.org',
+    '@type' => 'ClothingStore',
+    'name' => $siteTitle,
+    'description' => setting('tagline'),
+    'url' => base_url(),
+    'image' => base_url() . safe_url(setting('logo', 'assets/img/logo.png')),
+    'telephone' => '+1' . digits(setting('whatsapp')),
+    'priceRange' => 'Desde ' . setting('hero_badge', '$999'),
+    'address' => ['@type' => 'PostalAddress', 'streetAddress' => '1510 Ave H', 'addressLocality' => 'Brooklyn', 'addressRegion' => 'NY', 'postalCode' => '11230', 'addressCountry' => 'US'],
+    'sameAs' => array_values(array_filter([safe_url(setting('facebook_url'))])),
+], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) ?></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/site.css?v=4">
+<link rel="stylesheet" href="<?= e(asset('assets/css/site.css')) ?>">
 </head>
 <body>
 
@@ -120,7 +146,7 @@ $desc = plain_text($sections[0]['body'] ?? '') ?: setting('tagline');
   <div class="wrap hero-grid">
     <div class="hero-copy">
       <?php if ($s['eyebrow'] !== ''): ?><span class="pill"><?= e($s['eyebrow']) ?></span><?php endif; ?>
-      <h1><?= title_html($s['title']) ?></h1>
+      <h1><?= title_html($s['title'], true) ?></h1>
       <div class="rich lead"><?= $s['body'] ?></div>
       <div class="actions">
         <?php if ($s['cta'] !== ''): ?><a class="btn btn-lg" href="<?= e($link) ?>"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 21l2.1-5.4A8.4 8.4 0 1 1 21 11.5z"/></svg><?= e($s['cta']) ?></a><?php endif; ?>
@@ -129,7 +155,7 @@ $desc = plain_text($sections[0]['body'] ?? '') ?: setting('tagline');
       <ul class="checks"><li>Aparta el tuyo hoy</li><li>Atención por cita</li><li><?= e(setting('address')) ?></li></ul>
     </div>
     <div class="hero-media">
-      <?php if ($s['image'] !== ''): ?><div class="arch"><img src="<?= img_src($s['image']) ?>" alt="Vestido de quinceañera"></div><?php endif; ?>
+      <?php if ($s['image'] !== ''): ?><div class="arch"><img src="<?= img_src($s['image']) ?>" alt="Vestido de quinceañera" fetchpriority="high" width="800" height="1000"></div><?php endif; ?>
       <?php if (setting('hero_inset') !== ''): ?><div class="inset"><img src="<?= img_src(setting('hero_inset')) ?>" alt="Vestido de quinceañera estilo charro"></div><?php endif; ?>
       <div class="badge-price"><small>VESTIDOS DESDE</small><strong><?= e(setting('hero_badge', '$999')) ?></strong></div>
       <div class="badge-mx"><span></span>Hecho en México</div>
@@ -322,9 +348,9 @@ endforeach; ?>
 </footer>
 
 <?php if (setting('float_button', '1') === '1'): ?>
-<a class="wa-float" href="<?= e($waCita) ?>" aria-label="Escríbenos por WhatsApp">
+<a class="wa-float" href="<?= e($waCita) ?>" aria-label="Escríbenos por WhatsApp"><span class="wa-ring" aria-hidden="true"></span>
   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 21l2.1-5.4A8.4 8.4 0 1 1 21 11.5z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 .8a3.6 3.6 0 0 1-1.8-1.8l.8-1-1-2L9 9.5z"/></svg>
-  <span><?= e(setting('float_label', '¿Agendamos tu cita?')) ?></span>
+  <span class="wa-label"><?= e(setting('float_label', '¿Agendamos tu cita?')) ?></span>
 </a>
 <?php endif; ?>
 
@@ -341,7 +367,7 @@ endforeach; ?>
   </form>
 </dialog>
 
-<script src="assets/js/site.js?v=4"></script>
+<script src="<?= e(asset('assets/js/site.js')) ?>"></script>
 <?php if (isset($_GET['login'])): ?><script>document.getElementById('admin-dialog').showModal();</script><?php endif; ?>
 </body>
 </html>

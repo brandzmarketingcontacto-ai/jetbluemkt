@@ -143,6 +143,22 @@ function setting_save(string $k, string $v): void
     $st->execute([$k, $v]);
 }
 
+/** Ruta de un archivo con su fecha de modificación: obliga al navegador y a la caché a bajar la versión nueva. */
+function asset(string $path): string
+{
+    $file = APP_ROOT . '/' . ltrim($path, '/');
+    return $path . (is_file($file) ? '?v=' . filemtime($file) : '');
+}
+
+/** Dirección pública del sitio (https://dominio/carpeta/). */
+function base_url(): string
+{
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    $host = preg_replace('/[^A-Za-z0-9.:-]/', '', (string) ($_SERVER['HTTP_HOST'] ?? 'localhost'));
+    $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+    return ($https ? 'https' : 'http') . '://' . $host . $dir . '/';
+}
+
 function digits(string $s): string
 {
     return preg_replace('/\D+/', '', $s) ?? '';
