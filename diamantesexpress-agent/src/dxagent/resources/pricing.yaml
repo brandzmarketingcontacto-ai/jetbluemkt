@@ -1,0 +1,22 @@
+# Tabla de precios de OpenAI en USD por 1 000 000 de tokens.
+# IMPORTANTE: los precios cambian. Antes de operar, verifique cada valor en
+# https://openai.com/api/pricing y actualice `verified_at`. Puede sobrescribir este archivo
+# copiándolo a %LOCALAPPDATA%\DiamantesExpressAgent\config\pricing.yaml.
+# Si el modelo configurado no aparece aquí, el agente NO enviará solicitudes a OpenAI
+# (no se puede controlar el presupuesto sin precio).
+currency: USD
+unit_tokens: 1000000
+verified_at: null   # completar con la fecha de verificación manual
+models:
+  gpt-4.1-mini:
+    input: 0.40
+    cached_input: 0.10
+    output: 1.60
+  gpt-4.1:
+    input: 2.00
+    cached_input: 0.50
+    output: 8.00
+  gpt-4o-mini:
+    input: 0.15
+    cached_input: 0.075
+    output: 0.60

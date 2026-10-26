@@ -1,0 +1,87 @@
+# PLANTILLA — Flujo SUPERVISADO de regalos en Free Fire (FASE 9).
+#
+# Este archivo NO contiene identificadores reales a propósito. Todos los valores marcados con
+# <VERIFICAR...> deben completarse y validarse en la PC real por una persona responsable,
+# usando únicamente funciones oficiales del juego y una cuenta autorizada para esta operación.
+# El motor se NIEGA a cargar un flujo que contenga marcadores <VERIFICAR...>.
+#
+# Reglas:
+#  - No se modifican archivos, memoria ni protecciones del juego. Solo toques/teclas vía ADB
+#    sobre la interfaz visible, igual que haría una persona.
+#  - Antes de usarlo, confirme que los Términos de Servicio del juego y del editor permiten
+#    esta operación asistida en su cuenta. Si no lo permiten, no lo habilite.
+#  - El paso `commit` SIEMPRE requiere aprobación humana en modo SUPERVISADO.
+#  - AUTHORIZED_PRODUCTION solo es posible si `authorization.authorized` es true, existe una
+#    referencia de autorización y el backend devuelve production_authorized=true.
+#
+# Para activarlo: copie este archivo a %LOCALAPPDATA%\DiamantesExpressAgent\config\workflows\
+# como freefire_gift_supervised.yaml, complete los valores y configure workflow_id.
+id: freefire_gift_supervised
+version: 1
+description: Entrega supervisada de regalo en Free Fire (plantilla)
+simulation: false
+allowed_modes: [SUPERVISED, AUTHORIZED_PRODUCTION]
+
+authorization:
+  authorized: false
+  reference: "<VERIFICAR: referencia del acuerdo/autorización>"
+  validated_at: null
+  validated_by: null
+
+app:
+  package: "<VERIFICAR: nombre de paquete instalado, obtener con `adb shell pm list packages`>"
+  activity: null
+
+order_rules:
+  player_id_pattern: "<VERIFICAR: formato oficial del ID de jugador>"
+  products:
+    "<VERIFICAR: código de producto DiamantesExpress>": "<VERIFICAR: texto visible exacto del regalo>"
+
+calibration:
+  # Las coordenadas calibradas solo se usan si validated=true y la resolución coincide.
+  validated: false
+  resolution: null       # p. ej. [1600, 900] medido en la instancia real
+
+# Los juegos suelen renderizar con OpenGL/Unity y no exponen jerarquía UI:
+# la identificación de pantallas se hará con IA (descripciones) o con coordenadas calibradas.
+screens:
+  lobby: {description: "<VERIFICAR: descripción visual del lobby>"}
+  store: {description: "<VERIFICAR: descripción visual de la tienda>"}
+  gift_recipient: {description: "<VERIFICAR: pantalla de selección de destinatario>"}
+  gift_confirm: {description: "<VERIFICAR: pantalla de confirmación con destinatario y regalo>"}
+  gift_result_success: {description: "<VERIFICAR: confirmación oficial de regalo enviado>"}
+  gift_result_failure: {description: "<VERIFICAR: mensaje oficial de error>"}
+
+elements:
+  open_store: {description: "<VERIFICAR>", calibrated: null}
+  open_gift: {description: "<VERIFICAR>", calibrated: null}
+  recipient_field: {description: "<VERIFICAR>", calibrated: null}
+  confirm_button: {description: "<VERIFICAR>", calibrated: null}
+
+fields:
+  confirm_recipient: {description: "<VERIFICAR: dónde se muestra el destinatario antes de enviar>"}
+  confirm_product: {description: "<VERIFICAR: dónde se muestra el regalo antes de enviar>"}
+  result_recipient: {description: "<VERIFICAR>"}
+
+steps:
+  - {id: open_app, kind: launch_app}
+  - {id: wait_lobby, kind: wait_screen, screen: lobby}
+  - {id: store, kind: tap, element: open_store, expect: store}
+  - {id: gift, kind: tap, element: open_gift, expect: gift_recipient}
+  - {id: focus_recipient, kind: tap, element: recipient_field}
+  - {id: type_recipient, kind: input_text, value: "{recipient.player_id}"}
+  - {id: select_product, kind: tap_option, label: "{product.label}", expect: gift_confirm}
+  - id: verify_summary
+    kind: verify_fields
+    screen: gift_confirm
+    checks:
+      confirm_recipient: "{recipient.player_id}"
+      confirm_product: "{product.label}"
+  - {id: send, kind: commit, element: confirm_button, result_screens: [gift_result_success, gift_result_failure]}
+  - id: verify_result
+    kind: verify_result
+    success_screen: gift_result_success
+    failure_screen: gift_result_failure
+    failure_is_definitive: false
+    checks:
+      result_recipient: "{recipient.player_id}"

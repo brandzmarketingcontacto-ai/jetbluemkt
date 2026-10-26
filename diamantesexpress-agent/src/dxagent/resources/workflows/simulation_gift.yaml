@@ -1,0 +1,87 @@
+# Flujo de regalo sobre la aplicación FICTICIA "DX Gift Simulator" (android-sim/).
+# No realiza compras ni envíos reales. Sirve para validar el motor de punta a punta.
+id: simulation_gift
+version: 1
+description: Entrega de regalo en la aplicación de simulación
+simulation: true
+allowed_modes: [SIMULATION, SUPERVISED]
+
+app:
+  package: com.diamantesexpress.giftsim
+  activity: .MainActivity
+
+order_rules:
+  player_id_pattern: '^[0-9]{5,15}$'
+  products:            # código del pedido -> etiqueta visible en la app
+    DIAMANTES_100: "100 Diamantes"
+    DIAMANTES_310: "310 Diamantes"
+    DIAMANTES_520: "520 Diamantes"
+    DIAMANTES_1060: "1060 Diamantes"
+
+calibration:
+  validated: false     # sin coordenadas calibradas: se usa jerarquía UI y, si falta, IA
+
+screens:
+  home:
+    description: Pantalla inicial del simulador con el botón "Enviar regalo"
+    markers: [{resource_id: btn_start}]
+  recipient:
+    description: Formulario para ingresar el ID del jugador destinatario
+    markers: [{resource_id: field_player_id}]
+  gift_select:
+    description: Lista de regalos disponibles para el destinatario
+    markers: [{resource_id: tv_recipient}]
+  confirm:
+    description: Resumen previo al envío con botones Confirmar y Cancelar
+    markers: [{resource_id: btn_confirm}]
+  processing:
+    description: Indicador "Procesando..." sin resultado final
+    markers: [{resource_id: tv_processing}]
+  result_success:
+    description: Resultado "Regalo enviado" con destinatario, producto y referencia
+    markers: [{resource_id: tv_result_title, text: "Regalo enviado"}]
+  result_failure:
+    description: Resultado "Envío rechazado"
+    markers: [{resource_id: tv_result_title, text: "Envío rechazado"}]
+
+elements:
+  btn_start: {resource_id: btn_start, description: 'Botón "Enviar regalo"'}
+  field_player_id: {resource_id: field_player_id, description: Campo de texto del ID de jugador}
+  btn_search: {resource_id: btn_search, description: 'Botón "Buscar jugador"'}
+  btn_confirm: {resource_id: btn_confirm, description: 'Botón "Confirmar envío"'}
+  btn_done: {resource_id: btn_done, description: 'Botón "Finalizar"'}
+  tv_error: {resource_id: tv_error, description: Mensaje de error del formulario}
+
+fields:
+  confirm_recipient: {resource_id: tv_confirm_recipient, description: ID del destinatario en el resumen}
+  confirm_product_code: {resource_id: tv_confirm_product_code, description: Código del producto en el resumen}
+  result_recipient: {resource_id: tv_result_recipient, description: ID del destinatario en el resultado}
+  result_product_code: {resource_id: tv_result_product_code, description: Código del producto en el resultado}
+  result_ref: {resource_id: tv_result_ref, description: Referencia de la operación}
+
+steps:
+  - {id: open_app, kind: launch_app}
+  - {id: reset_to_home, kind: navigate_to, screen: home, via_back: 4}
+  - {id: start, kind: tap, element: btn_start, expect: recipient}
+  - {id: focus_player, kind: tap, element: field_player_id}
+  - {id: type_player, kind: input_text, value: "{recipient.player_id}"}
+  - {id: search_player, kind: tap, element: btn_search, expect: gift_select,
+     fail_if_visible: {element: tv_error, code: RECIPIENT_NOT_FOUND}}
+  - {id: select_product, kind: tap_option, label: "{product.label}", expect: confirm}
+  - id: verify_summary
+    kind: verify_fields
+    screen: confirm
+    checks:
+      confirm_recipient: "{recipient.player_id}"
+      confirm_product_code: "{product.code}"
+  - {id: send, kind: commit, element: btn_confirm, result_screens: [result_success, result_failure, processing]}
+  - id: verify_result
+    kind: verify_result
+    success_screen: result_success
+    failure_screen: result_failure
+    failure_is_definitive: true
+    checks:
+      result_recipient: "{recipient.player_id}"
+      result_product_code: "{product.code}"
+    reference_field: result_ref
+  - {id: finish, kind: tap, element: btn_done, expect: home, optional: true}
