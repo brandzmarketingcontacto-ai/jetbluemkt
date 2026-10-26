@@ -6,6 +6,7 @@ import json
 import logging
 import logging.handlers
 import re
+import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,7 +73,7 @@ def setup_logging(log_dir: Path, component: str, level: int = logging.INFO,
         log_file, maxBytes=max_bytes, backupCount=backups, encoding="utf-8")
     file_handler.setFormatter(JsonFormatter())
     root.addHandler(file_handler)
-    if console:
+    if console and sys.stderr is not None:  # en el EXE de ventana no hay consola
         stream = logging.StreamHandler()
         stream.setFormatter(ConsoleFormatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
         root.addHandler(stream)

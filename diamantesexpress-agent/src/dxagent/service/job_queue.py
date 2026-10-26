@@ -22,6 +22,7 @@ class JobQueueManager:
         self.instance = instance or "default"
         self.account_key = account_key or "default"
         self.max_local_attempts = max_local_attempts
+        self.last_pending: int | None = None
 
     def _lock_keys(self) -> list[str]:
         # Una sola tarea activa por instancia Android y por cuenta del juego.
@@ -34,7 +35,9 @@ class JobQueueManager:
     async def next_job(self) -> Job | None:
         if self.busy():
             return None
-        for raw in await self.api.list_pending_jobs(limit=5):
+        listed_jobs = await self.api.list_pending_jobs(limit=5)
+        self.last_pending = len(listed_jobs)
+        for raw in listed_jobs:
             job_id = str(raw.get("job_id", ""))
             try:
                 listed = Job.model_validate(raw)

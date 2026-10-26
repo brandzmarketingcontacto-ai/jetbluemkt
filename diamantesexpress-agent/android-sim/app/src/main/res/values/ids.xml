@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Deben coincidir con src/dxagent/android/mock_device.py y workflows/simulation_gift.yaml -->
+<resources>
+    <item name="app_title" type="id" />
+    <item name="tv_home" type="id" />
+    <item name="btn_start" type="id" />
+    <item name="tv_recipient_label" type="id" />
+    <item name="field_player_id" type="id" />
+    <item name="btn_search" type="id" />
+    <item name="tv_error" type="id" />
+    <item name="tv_recipient" type="id" />
+    <item name="product_DIAMANTES_100" type="id" />
+    <item name="product_DIAMANTES_310" type="id" />
+    <item name="product_DIAMANTES_520" type="id" />
+    <item name="product_DIAMANTES_1060" type="id" />
+    <item name="tv_confirm_title" type="id" />
+    <item name="tv_confirm_recipient" type="id" />
+    <item name="tv_confirm_product" type="id" />
+    <item name="tv_confirm_product_code" type="id" />
+    <item name="btn_confirm" type="id" />
+    <item name="btn_cancel" type="id" />
+    <item name="tv_processing" type="id" />
+    <item name="tv_result_title" type="id" />
+    <item name="tv_result_recipient" type="id" />
+    <item name="tv_result_product_code" type="id" />
+    <item name="tv_result_ref" type="id" />
+    <item name="btn_done" type="id" />
+</resources>

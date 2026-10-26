@@ -1,0 +1,48 @@
+name: DiamantesExpress Agent (Windows)
+
+on:
+  push:
+    paths:
+      - "diamantesexpress-agent/**"
+      - ".github/workflows/diamantesexpress-agent.yml"
+  workflow_dispatch:
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: diamantesexpress-agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependencias
+        run: python -m pip install -r requirements-dev.txt
+      - name: Pruebas (sin envíos reales)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+      - name: Compilar EXE
+        run: |
+          python packaging/make_icon.py
+          pyinstaller packaging/dxagent.spec --noconfirm --clean
+      - name: Verificar EXE
+        shell: pwsh
+        run: |
+          $env:DXAGENT_HOME = "$env:RUNNER_TEMP\dxhome"
+          .\dist\DiamantesExpressAgent\dxagent-cli.exe doctor
+          .\dist\DiamantesExpressAgent\dxagent-cli.exe simulate --orders 25
+          if ($LASTEXITCODE -ne 0) { throw "simulación fallida" }
+      - name: Instalador (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging\installer.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DiamantesExpressAgent-windows
+          path: |
+            diamantesexpress-agent/dist/DiamantesExpressAgent
+            diamantesexpress-agent/dist/installer

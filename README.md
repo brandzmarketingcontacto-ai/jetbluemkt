@@ -23,3 +23,7 @@ npm run dev
 npm run build
 npm run preview
 ```
+
+## DiamantesExpress Agent
+
+La carpeta [`diamantesexpress-agent/`](diamantesexpress-agent/README.md) contiene el agente nativo de Windows de DiamantesExpress (Python + PySide6), independiente del sitio web.

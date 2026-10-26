@@ -46,13 +46,15 @@ def find_adb(configured: str = "", bluestacks_dir: str = "") -> str | None:
 class AdbRunner:
     """Ejecuta adb con timeout y clasificación de errores."""
 
-    def __init__(self, adb_path: str, timeout: float = 20.0):
-        self.adb_path = adb_path
+    def __init__(self, adb_path: str | list[str], timeout: float = 20.0):
+        # adb_path puede ser una ruta o un prefijo de comando (p. ej. un adb falso en pruebas).
+        self.command = [adb_path] if isinstance(adb_path, str) else list(adb_path)
+        self.adb_path = self.command[0]
         self.timeout = timeout
 
     async def run(self, *args: str, serial: str | None = None, timeout: float | None = None,
                   binary: bool = False) -> bytes | str:
-        cmd = [self.adb_path]
+        cmd = list(self.command)
         if serial:
             cmd += ["-s", serial]
         cmd += list(args)

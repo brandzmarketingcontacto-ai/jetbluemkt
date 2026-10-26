@@ -14,6 +14,7 @@ import asyncio
 import logging
 import os
 import time
+from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
@@ -125,6 +126,7 @@ class AgentService:
             "api_last_ok": self.health.api_last_ok, "device_ok": self.health.device_ok,
             "device_error": self.health.device_error, "emulator_running": self.health.emulator_running,
             "vision_enabled": self.vision is not None, "outbox_pending": self.db.outbox_pending_count(),
+            "pending_jobs": self.queue.last_pending,
             "current_job_id": self.current_job.job_id if self.current_job else None,
             "emergency": self.emergency_flag.exists(), "ts": time.time(),
         })
@@ -134,7 +136,19 @@ class AgentService:
 
     # ------------------------------------------------------------------ setup
     async def startup(self) -> None:
+        previous = self.db.get_status("agent") or {}
         self.set_state(AgentState.STARTING)
+        # Respeta una pausa/detención manual anterior a un reinicio del servicio.
+        if previous.get("desired_running") is False:
+            self.desired_running = False
+        # Comandos antiguos encolados mientras el servicio no corría quedan obsoletos (la emergencia usa su
+        # archivo bandera). Los recientes (p. ej. "start" enviado por la interfaz al lanzar el servicio) se aplican.
+        for cmd in self.db.pop_commands():
+            age = time.time() - datetime.fromisoformat(cmd["created_at"]).timestamp()
+            if age <= 30:
+                self.handle_command(cmd["command"], cmd.get("issued_by") or "")
+            else:
+                log.info("Comando obsoleto descartado: %s (%.0fs)", cmd["command"], age)
         self.recovery.recover_on_startup()
         if self.workflow is None:
             try:
