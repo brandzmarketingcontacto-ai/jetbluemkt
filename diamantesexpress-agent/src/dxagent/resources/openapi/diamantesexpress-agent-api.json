@@ -1,0 +1,1827 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "DiamantesExpress · Windows Delivery Agent API",
+    "version": "1.0.0",
+    "description": "Contrato fiel de la API real implementada en DiamantesExpress (Hostinger Horizons). El agente Windows inicia todas las llamadas por HTTPS saliente; el sandbox no recibe conexiones entrantes. Dos esquemas de autenticación independientes: token de agente (rutas /agent) y JWT de SUPER_ADMIN (rutas /automation). El enrutamiento al agente solo aplica a pedidos «Pase Booyah» con pago verificado y toggle reversible activado; los demás productos conservan su proveedor."
+  },
+  "servers": [
+    {
+      "url": "/hcgi/api",
+      "description": "API del sitio publicado (prefijo /hcgi/api)."
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "agentToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "dxa_<token>",
+        "description": "Token de agente creado desde Automatización. Se envía como Authorization: Bearer dxa_... o X-Agent-Token: dxa_... Solo se almacena su hash SHA-256."
+      },
+      "superAdminJwt": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "JWT de PocketBase del SUPER_ADMIN. El servidor valida el rol SUPER_ADMIN."
+      }
+    },
+    "schemas": {
+      "Task": {
+        "type": "object",
+        "description": "Tarea de entrega tal como la ve el agente (publicTask).",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string",
+            "description": "ID del pedido (vacío en simulación)."
+          },
+          "orderCode": {
+            "type": "string",
+            "description": "Código público del pedido (p. ej. DX-1234)."
+          },
+          "productName": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Tipo de entrega. Hoy solo se enruta «pase_booyah»."
+          },
+          "playerId": {
+            "type": "string",
+            "description": "Player ID de Free Fire del destinatario."
+          },
+          "playerZone": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "queued",
+              "processing",
+              "verifying",
+              "completed",
+              "failed",
+              "manual_review",
+              "cancelled"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "simulation",
+              "supervised",
+              "production"
+            ]
+          },
+          "simulated": {
+            "type": "boolean",
+            "description": "true = no tocar el juego ni el pedido real."
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "maxAttempts": {
+            "type": "integer"
+          },
+          "leaseExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "claimedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evidence": {
+            "type": "object",
+            "nullable": true,
+            "description": "Evidencia reportada (libre, máx. 2 MB)."
+          },
+          "result": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "completed",
+                  "failed",
+                  "uncertain"
+                ]
+              },
+              "simulated": {
+                "type": "boolean"
+              },
+              "giftCode": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "reportedAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "errorCode": {
+            "type": "string"
+          },
+          "errorMessage": {
+            "type": "string"
+          },
+          "usage": {
+            "type": "object",
+            "properties": {
+              "model": {
+                "type": "string"
+              },
+              "promptTokens": {
+                "type": "integer"
+              },
+              "completionTokens": {
+                "type": "integer"
+              },
+              "cachedTokens": {
+                "type": "integer"
+              },
+              "costUsd": {
+                "type": "number",
+                "description": "Costo estimado en USD (calculado o reportado)."
+              }
+            }
+          },
+          "notes": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Usage": {
+        "type": "object",
+        "description": "Uso de OpenAI reportado por el agente. Todos los campos opcionales; el servidor estima el costo cuando no se reporta cost_usd.",
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "prompt_tokens": {
+            "type": "integer"
+          },
+          "completion_tokens": {
+            "type": "integer"
+          },
+          "cached_tokens": {
+            "type": "integer",
+            "description": "Se descuentan de la entrada facturable."
+          },
+          "cost_usd": {
+            "type": "number",
+            "description": "Si > 0 se conserva; si no, se estima con las tarifas configuradas."
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Agent",
+      "description": "Rutas que usa el agente Windows (token de agente)."
+    },
+    {
+      "name": "Automation",
+      "description": "Consola SUPER_ADMIN (JWT de SUPER_ADMIN)."
+    }
+  ],
+  "paths": {
+    "/agent/heartbeat": {
+      "post": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "Registrar presencia y leer el modo/pausa actual.",
+        "security": [
+          {
+            "agentToken": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "hostname": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "appVersion": {
+                    "type": "string",
+                    "maxLength": 40
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Estado actual del sistema.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "serverTime": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "off",
+                        "simulation",
+                        "supervised",
+                        "production"
+                      ]
+                    },
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "accepted": {
+                      "type": "boolean",
+                      "description": "true si el agente debe seguir trabajando."
+                    },
+                    "booyahAgent": {
+                      "type": "boolean"
+                    },
+                    "leaseSeconds": {
+                      "type": "integer"
+                    },
+                    "maxAttempts": {
+                      "type": "integer"
+                    },
+                    "pollAfterSeconds": {
+                      "type": "integer",
+                      "description": "Sugerencia de intervalo (10s)."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o es inválido/revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "missing_agent_token",
+                        "invalid_agent_token",
+                        "authorization required",
+                        "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/tasks/claim": {
+      "post": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "Reclamar la siguiente tarea pendiente (compare-and-swap + lease).",
+        "description": "Devuelve task=null cuando no hay trabajo, el sistema está detenido/pausado, o se alcanzó el límite de gasto. simulate=true indica al agente que NO ejecute acciones reales. Reclamación atómica: se escribe el lease y se reconfirma la propiedad antes de entregar la tarea.",
+        "security": [
+          {
+            "agentToken": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado del reclamo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "task": {
+                      "$ref": "#/components/schemas/Task",
+                      "nullable": true
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "automation_off",
+                        "paused",
+                        "spend_limit_reached",
+                        "queue_unavailable",
+                        "empty"
+                      ]
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "off",
+                        "simulation",
+                        "supervised",
+                        "production"
+                      ],
+                      "nullable": true
+                    },
+                    "limit": {
+                      "type": "object",
+                      "nullable": true
+                    },
+                    "simulate": {
+                      "type": "boolean"
+                    },
+                    "leaseSeconds": {
+                      "type": "integer"
+                    },
+                    "instructions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o es inválido/revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "missing_agent_token",
+                        "invalid_agent_token",
+                        "authorization required",
+                        "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/tasks/current": {
+      "get": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "Listar las tareas que este agente tiene reclamadas (recuperación tras reinicio).",
+        "security": [
+          {
+            "agentToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tareas en processing/verifying del agente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tasks": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Task"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o es inválido/revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "missing_agent_token",
+                        "invalid_agent_token",
+                        "authorization required",
+                        "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/tasks/{id}/progress": {
+      "post": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "Reportar avance (processing | verifying) y renovar el lease.",
+        "description": "Solo el agente propietario puede reportar progreso. Una tarea ya finalizada devuelve 409.",
+        "security": [
+          {
+            "agentToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID de la tarea."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "processing",
+                      "verifying"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "evidence": {
+                    "type": "object",
+                    "description": "Evidencia parcial (libre, máx. 2 MB)."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Avance registrado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "task": {
+                      "$ref": "#/components/schemas/Task"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o es inválido/revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "missing_agent_token",
+                        "invalid_agent_token",
+                        "authorization required",
+                        "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "La tarea no existe.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "task_not_found"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "La tarea pertenece a otro agente o ya terminó.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "task_owned_by_other_agent",
+                        "task_already_finished"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/tasks/{id}/result": {
+      "post": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "Resultado final de la entrega (idempotente).",
+        "description": "outcome=completed|failed|uncertain. uncertain pasa SIEMPRE a revisión manual. En supervised, los completos también quedan en revisión. Reintentar el POST es idempotente (devuelve duplicate:true).",
+        "security": [
+          {
+            "agentToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID de la tarea."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "outcome"
+                ],
+                "properties": {
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "completed",
+                      "failed",
+                      "uncertain"
+                    ]
+                  },
+                  "giftCode": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "evidence": {
+                    "type": "object",
+                    "description": "p. ej. { simulated, screenshot: \"sha256:…\", adbLog: \"sha256:…\" }."
+                  },
+                  "usage": {
+                    "$ref": "#/components/schemas/Usage"
+                  },
+                  "errorCode": {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  "errorMessage": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado almacenado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "duplicate": {
+                      "type": "boolean"
+                    },
+                    "task": {
+                      "$ref": "#/components/schemas/Task"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o es inválido/revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "missing_agent_token",
+                        "invalid_agent_token",
+                        "authorization required",
+                        "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "La tarea no existe.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "task_not_found"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "La tarea pertenece a otro agente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "task_owned_by_other_agent"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/automation/status": {
+      "get": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Estado completo de la automatización (panel).",
+        "security": [
+          {
+            "superAdminJwt": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado, conteos, uso, tareas, errores y tokens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o es inválido/revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "missing_agent_token",
+                        "invalid_agent_token",
+                        "authorization required",
+                        "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario no es SUPER_ADMIN.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "super admin only"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/automation/settings": {
+      "post": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Actualizar configuración (modo, pausa, límites, tarifas, enrutamiento Booyah).",
+        "description": "Activar production requiere confirm:true. Modos reales bloqueados por defecto.",
+        "security": [
+          {
+            "superAdminJwt": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "off",
+                      "simulation",
+                      "supervised",
+                      "production"
+                    ]
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "description": "Obligatorio true para production."
+                  },
+                  "paused": {
+                    "type": "boolean"
+                  },
+                  "booyahAgent": {
+                    "type": "boolean",
+                    "description": "Toggle reversible de enrutamiento Pase Booyah."
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "leaseSeconds": {
+                    "type": "integer",
+                    "minimum": 60,
+                    "maximum": 3600
+                  },
+                  "maxAttempts": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10
+                  },
+                  "dailyLimitUsd": {
+                    "type": "number"
+                  },
+                  "monthlyLimitUsd": {
+                    "type": "number"
+                  },
+                  "priceInPer1m": {
+                    "type": "number"
+                  },
+                  "priceOutPer1m": {
+                    "type": "number"
+                  },
+                  "priceCachePer1m": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Estado actualizado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o es inválido/revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "missing_agent_token",
+                        "invalid_agent_token",
+                        "authorization required",
+                        "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario no es SUPER_ADMIN.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "super admin only"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validación fallida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "invalid_mode",
+                        "production_requires_confirmation",
+                        "nothing_to_update"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/automation/tokens": {
+      "get": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Listar tokens del agente (sin el valor en claro).",
+        "security": [
+          {
+            "superAdminJwt": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de tokens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o es inválido/revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "missing_agent_token",
+                        "invalid_agent_token",
+                        "authorization required",
+                        "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario no es SUPER_ADMIN.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "super admin only"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Crear un token de agente (se devuelve UNA sola vez).",
+        "security": [
+          {
+            "superAdminJwt": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "maxLength": 80
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Token creado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "token": {
+                      "type": "string",
+                      "description": "dxa_... — no se vuelve a mostrar."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o es inválido/revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "missing_agent_token",
+                        "invalid_agent_token",
+                        "authorization required",
+                        "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario no es SUPER_ADMIN.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "super admin only"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/automation/tokens/{id}/revoke": {
+      "post": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Revocar un token de agente.",
+        "security": [
+          {
+            "superAdminJwt": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID del token."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Token revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o es inválido/revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "missing_agent_token",
+                        "invalid_agent_token",
+                        "authorization required",
+                        "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario no es SUPER_ADMIN.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "super admin only"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El token no existe.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "token_not_found"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/automation/tasks/{id}/retry": {
+      "post": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Reintentar manualmente una tarea (vuelve a pending).",
+        "security": [
+          {
+            "superAdminJwt": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID de la tarea."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tarea reencolada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "task": {
+                      "$ref": "#/components/schemas/Task"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o es inválido/revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "missing_agent_token",
+                        "invalid_agent_token",
+                        "authorization required",
+                        "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario no es SUPER_ADMIN.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "super admin only"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "La tarea no existe.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "task_not_found"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Ya completada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "already_completed"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/automation/tasks/{id}/approve": {
+      "post": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Aprobar manualmente una entrega en revisión.",
+        "security": [
+          {
+            "superAdminJwt": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID de la tarea."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tarea aprobada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "task": {
+                      "$ref": "#/components/schemas/Task"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o es inválido/revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "missing_agent_token",
+                        "invalid_agent_token",
+                        "authorization required",
+                        "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario no es SUPER_ADMIN.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "super admin only"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "La tarea no existe.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "task_not_found"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No revisable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "not_reviewable"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/automation/tasks/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Cancelar una tarea.",
+        "security": [
+          {
+            "superAdminJwt": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID de la tarea."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tarea cancelada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "task": {
+                      "$ref": "#/components/schemas/Task"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o es inválido/revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "missing_agent_token",
+                        "invalid_agent_token",
+                        "authorization required",
+                        "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario no es SUPER_ADMIN.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "super admin only"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "La tarea no existe.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "task_not_found"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Ya completada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "already_completed"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/automation/simulate": {
+      "post": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Encolar una tarea simulada (no crea pedido ni cobro).",
+        "description": "Prueba segura del flujo. Nunca toca pagos, proveedores ni el juego.",
+        "security": [
+          {
+            "superAdminJwt": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Tarea simulada creada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "task": {
+                      "$ref": "#/components/schemas/Task"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o es inválido/revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "missing_agent_token",
+                        "invalid_agent_token",
+                        "authorization required",
+                        "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario no es SUPER_ADMIN.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "super admin only"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/automation/spec": {
+      "get": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Especificación legible de integración (resumen en español).",
+        "security": [
+          {
+            "superAdminJwt": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Documento de especificación.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o es inválido/revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "missing_agent_token",
+                        "invalid_agent_token",
+                        "authorization required",
+                        "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario no es SUPER_ADMIN.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "super admin only"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/automation/openapi": {
+      "get": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Contrato OpenAPI 3.0 fiel a la API real (este documento).",
+        "security": [
+          {
+            "superAdminJwt": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Documento OpenAPI 3.0.3 en JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o es inválido/revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "missing_agent_token",
+                        "invalid_agent_token",
+                        "authorization required",
+                        "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario no es SUPER_ADMIN.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "super admin only"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-mvp-scope": {
+    "title": "MVP del cliente Windows (DiamantesExpress Agent)",
+    "goal": "Conectar DiamantesExpress con un software nativo Windows 24/7 que controle un emulador Android mediante ADB y gestione entregas autorizadas de regalos de Free Fire.",
+    "firstVersionMustDo": [
+      "Conectarse con Horizons: heartbeat + claim de tareas vía HTTPS saliente con token de agente.",
+      "Abrir una sola instancia de BlueStacks (ADB habilitado desde la configuración avanzada).",
+      "Controlar una aplicación Android de prueba con ADB (inicio, taps, capturas).",
+      "Interpretar pantallas con OpenAI únicamente cuando aporte valor (análisis visual / decisiones).",
+      "Devolver resultado (outcome) y uso de tokens (usage) al servidor."
+    ],
+    "openAiUsagePolicy": [
+      "NO usar OpenAI para inicio de BlueStacks, conexión ADB ni comprobaciones técnicas locales.",
+      "Reservar el modelo para analizar capturas y resolver decisiones visuales.",
+      "Reportar prompt_tokens, completion_tokens y cached_tokens en cada resultado."
+    ],
+    "architecture": [
+      "Comenzar con una sola instancia de BlueStacks; ampliar a varias instancias/agentes tras validar estabilidad y métricas.",
+      "El agente inicia todas las llamadas (sin puertos entrantes en el sandbox).",
+      "Persistir el token con DPAPI (Almacén de credenciales de Windows), nunca en el repositorio."
+    ]
+  },
+  "x-unsupported": [
+    "No hay endpoint para crear pedidos desde el agente: las tareas solo nacen desde webhooks de pago verificados (Stripe/PayPal/Mercado Pago) o desde /automation/simulate.",
+    "No hay endpoint de subida de capturas: la evidencia se envía inline en /agent/tasks/{id}/progress y /result (campo evidence, JSON, máx. 2 MB). Se recomienda enviar hashes (sha256) y metadatos, no imágenes completas.",
+    "No hay websockets ni notificaciones push: el agente hace polling (sugerencia pollAfterSeconds=10).",
+    "No hay autenticación OAuth ni claves de Garena: el inicio de sesión del emulador y las credenciales de juego se gestionan localmente, fuera del servidor.",
+    "No hay soporte de períodos de prueba (trial) ni facturación recurrente en esta API.",
+    "El enrutamiento al agente solo aplica a «Pase Booyah»; el resto de productos conserva su proveedor y no se ve afectado.",
+    "La entrega real solo ocurre en modo production; simulation y supervised son seguros por diseño."
+  ],
+  "x-safety": [
+    "Idempotencia: índice UNIQUE por idempotency_key (código de pedido); un webhook repetido no crea otra tarea.",
+    "Reclamo atómico: se escribe el lease y se reconfirma la propiedad antes de entregar la tarea.",
+    "Vencimiento: al expirar el lease la tarea vuelve a pending hasta max_attempts y luego a manual_review.",
+    "Pago verificado: las tareas solo se crean tras webhook verificado, nunca desde el checkout.",
+    "Resultado uncertain → siempre revisión manual, nunca autocompletado.",
+    "Modo production requiere confirmación explícita del SUPER_ADMIN.",
+    "Tokens almacenados solo como hash SHA-256; el valor en claro se muestra una sola vez."
+  ]
+}

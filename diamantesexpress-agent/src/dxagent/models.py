@@ -23,6 +23,7 @@ class AgentState(str, Enum):
     RUNNING = "RUNNING"
     PAUSED = "PAUSED"
     DEGRADED = "DEGRADED"          # sin Internet / API no disponible / emulador caído
+    SERVER_HOLD = "SERVER_HOLD"    # DiamantesExpress está en off, en pausa o en un modo no permitido localmente
     AUTH_ERROR = "AUTH_ERROR"      # token inválido, expirado o revocado
     BUDGET_EXHAUSTED = "BUDGET_EXHAUSTED"
     EMERGENCY_STOP = "EMERGENCY_STOP"
@@ -67,7 +68,7 @@ class Product(BaseModel):
 
 
 class Job(BaseModel):
-    """Trabajo recibido desde DiamantesExpress (contrato provisional)."""
+    """Tarea recibida de `/agent/tasks/claim` (ver Job.from_task)."""
 
     model_config = ConfigDict(extra="ignore")
     job_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_\-:.]+$")
@@ -77,9 +78,43 @@ class Job(BaseModel):
     recipient: Recipient
     product: Product
     attempt: int = 1
+    max_attempts: int | None = None
     lease_expires_at: datetime | None = None
     created_at: datetime | None = None
+    simulated: bool = False          # True = NO tocar el juego ni el pedido real
+    server_mode: str | None = None   # off | simulation | supervised | production (lo decide Horizons)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @classmethod
+    def from_task(cls, task: dict[str, Any], *, simulate: bool = False, mode: str | None = None) -> "Job":
+        """Convierte una tarea de `/agent/tasks/claim` (esquema Task de Horizons) en un Job interno."""
+        task_mode = task.get("mode") or mode
+        kind = str(task.get("kind") or "")
+        return cls(
+            job_id=str(task.get("id") or ""),
+            order_id=str(task.get("orderCode") or task.get("orderId") or task.get("id") or ""),
+            type=kind or "gift_delivery",
+            recipient=Recipient(player_id=str(task.get("playerId") or ""),
+                                region=(task.get("playerZone") or None)),
+            product=Product(code=kind, name=str(task.get("productName") or kind)),
+            attempt=int(task.get("attempts") or 1),
+            max_attempts=task.get("maxAttempts"),
+            lease_expires_at=task.get("leaseExpiresAt") or None,
+            created_at=task.get("createdAt") or None,
+            # Cualquier señal de simulación del servidor obliga a simular.
+            simulated=bool(simulate or task.get("simulated") or task_mode == "simulation"),
+            server_mode=task_mode,
+            metadata={"orderId": task.get("orderId") or "", "orderCode": task.get("orderCode") or ""},
+        )
+
+
+class ApiUsage(BaseModel):
+    """Bloque `usage` del resultado (esquema Usage de Horizons)."""
+    model: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cached_tokens: int = 0
+    cost_usd: float = 0.0
 
 
 class UsageRecord(BaseModel):

@@ -35,7 +35,8 @@ app:
 order_rules:
   player_id_pattern: "<VERIFICAR: formato oficial del ID de jugador>"
   products:
-    "<VERIFICAR: código de producto DiamantesExpress>": "<VERIFICAR: texto visible exacto del regalo>"
+    # Horizons enruta hoy solo kind=pase_booyah. Complete el texto visible EXACTO del regalo en el juego.
+    pase_booyah: "<VERIFICAR: texto visible exacto del Pase Booyah en la tienda de regalos>"
 
 calibration:
   # Las coordenadas calibradas solo se usan si validated=true y la resolución coincide.

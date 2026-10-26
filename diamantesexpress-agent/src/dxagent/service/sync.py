@@ -1,8 +1,8 @@
 """Sincronización de eventos pendientes (outbox) con DiamantesExpress.
 
-Todo lo que se reporta al backend (progreso, consumo, evidencias, resultados, alertas) se
-escribe primero en SQLite y luego se envía con su Idempotency-Key. Así una pérdida de
-Internet o un reinicio no pierde ni duplica información.
+Progreso y resultados se escriben primero en SQLite y luego se envían en orden FIFO. Así una
+pérdida de Internet o un reinicio no pierde información. `/agent/tasks/{id}/result` es idempotente
+en el servidor (reintentar devuelve duplicate:true), por lo que reenviar nunca duplica.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import logging
 import time
 
 from dxagent.api.client import HorizonsApiClient
-from dxagent.api.errors import ApiError, ApiUnavailable, AuthError, ConflictError
+from dxagent.api.errors import ApiError, ApiUnavailable, AuthError, ConflictError, NotFoundError
 from dxagent.database import LocalDatabase
 
 log = logging.getLogger(__name__)
@@ -36,40 +36,41 @@ class OutboxSync:
                 break
             items.append(item)
         sent = 0
-        i = 0
-        while i < len(items):
-            item = items[i]
-            batch = [item]
-            if item["kind"] == "usage":
-                while i + len(batch) < len(items) and items[i + len(batch)]["kind"] == "usage" and len(batch) < 20:
-                    batch.append(items[i + len(batch)])
+        for item in items:
             try:
-                await self._dispatch(batch)
+                await self._dispatch(item)
             except AuthError:
                 raise
             except ApiUnavailable as exc:
-                for b in batch:
-                    delay = min(MAX_BACKOFF, 2 ** min(b["attempts"] + 1, 9))
-                    self.db.outbox_retry(b["id"], self.clock() + delay, str(exc))
+                delay = min(MAX_BACKOFF, 2 ** min(item["attempts"] + 1, 9))
+                self.db.outbox_retry(item["id"], self.clock() + delay, str(exc))
                 return sent  # sin conexión: se conserva el orden y se reintenta luego
             except ConflictError as exc:
-                for b in batch:
-                    self.db.outbox_sent(b["id"], "conflict", str(exc))
-                    self.db.add_event("ERROR", "sync", f"Conflicto al enviar {b['kind']}: {exc}", b["job_id"])
-            except (ApiError, OSError, ValueError) as exc:
-                for b in batch:
-                    if b["attempts"] >= 5:
-                        self.db.outbox_sent(b["id"], "rejected", str(exc))
-                        self.db.add_event("ERROR", "sync", f"Envío descartado ({b['kind']}): {exc}", b["job_id"])
-                    else:
-                        self.db.outbox_retry(b["id"], self.clock() + 30, str(exc))
+                self._conflict(item, exc)
+            except NotFoundError as exc:
+                self.db.outbox_sent(item["id"], "rejected", str(exc))
+                self.db.add_event("ERROR", "sync", f"La tarea ya no existe en el servidor ({item['kind']})",
+                                  item["job_id"])
+            except (ApiError, ValueError) as exc:
+                if item["attempts"] >= 5:
+                    self.db.outbox_sent(item["id"], "rejected", str(exc))
+                    self.db.add_event("ERROR", "sync", f"Envío descartado ({item['kind']}): {exc}", item["job_id"])
+                else:
+                    self.db.outbox_retry(item["id"], self.clock() + 30, str(exc))
             else:
-                for b in batch:
-                    self.db.outbox_sent(b["id"])
-                sent += len(batch)
+                self.db.outbox_sent(item["id"])
+                sent += 1
                 self.last_success = self.clock()
-            i += len(batch)
         return sent
+
+    def _conflict(self, item: dict, exc: ConflictError) -> None:
+        code = (exc.body or {}).get("error") if isinstance(exc.body, dict) else None
+        self.db.outbox_sent(item["id"], "conflict", str(exc))
+        if item["kind"] == "progress" and code == "task_already_finished":
+            return  # progreso tardío de una tarea ya cerrada: sin efecto
+        self.db.add_alert(f"conflict:{item['idem_key']}", "CRITICAL" if item["kind"] == "result" else "ERROR",
+                          code or "CONFLICT", f"El servidor rechazó {item['kind']} ({code}). Revise la tarea "
+                          "en Automatización: otro agente puede tenerla.", item["job_id"])
 
     async def flush_all(self, max_rounds: int = 1000) -> int:
         total = 0
@@ -80,26 +81,17 @@ class OutboxSync:
                 break
         return total
 
-    async def _dispatch(self, batch: list[dict]) -> None:
-        item = batch[0]
+    async def _dispatch(self, item: dict) -> None:
         kind, job_id = item["kind"], item["job_id"]
         payload = json.loads(item["payload_json"])
-        if kind == "usage":
-            records = [json.loads(b["payload_json"]) for b in batch]
-            idem = "usage:" + ",".join(sorted(r["record_id"] for r in records))
-            if len(records) == 1:
-                idem = item["idem_key"]
-            await self.api.report_usage(records, idem)
-            self.db.mark_usage_synced([r["record_id"] for r in records])
-        elif kind == "progress":
-            await self.api.report_progress(job_id, payload, item["idem_key"])
-        elif kind == "evidence":
-            await self.api.upload_evidence(job_id, payload["metadata"], payload["path"], item["idem_key"])
-        elif kind == "complete":
-            await self.api.complete_job(job_id, payload, item["idem_key"])
-        elif kind == "release":
-            await self.api.release_job(job_id, payload.get("reason", ""), item["idem_key"])
-        elif kind == "alert":
-            await self.api.report_alert(payload, item["idem_key"])
+        if kind == "progress":
+            await self.api.report_progress(job_id, payload["status"], payload.get("message", ""),
+                                           payload.get("evidence"), item["idem_key"])
+        elif kind == "result":
+            response = await self.api.report_result(job_id, payload, item["idem_key"])
+            self.db.mark_usage_synced([u["record_id"] for u in self.db.usage_for_job(job_id)])
+            server_task = (response or {}).get("task") or {}
+            if server_task.get("status"):
+                self.db.update_job(job_id, server_status=server_task["status"])
         else:
             raise ValueError(f"Tipo de outbox desconocido: {kind}")

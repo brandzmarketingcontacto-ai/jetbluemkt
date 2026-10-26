@@ -15,7 +15,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 @pytest.fixture(autouse=True)
 def isolated_home(tmp_path, monkeypatch):
     monkeypatch.setenv("DXAGENT_HOME", str(tmp_path / "home"))
-    for var in ("DIAMANTESEXPRESS_AGENT_TOKEN", "OPENAI_API_KEY", "DIAMANTESEXPRESS_API_URL", "AUTOMATION_MODE"):
+    for var in ("DIAMANTESEXPRESS_AGENT_TOKEN", "OPENAI_API_KEY", "DIAMANTESEXPRESS_API_URL", "AUTOMATION_MODE",
+                "DX_API_BASE_URL", "DX_AGENT_TOKEN", "DX_AGENT_NAME", "AGENT_MODE", "ADB_PATH", "ADB_DEVICE_SERIAL"):
         monkeypatch.delenv(var, raising=False)
     return tmp_path / "home"
 
@@ -29,8 +30,8 @@ from dxagent.database import LocalDatabase  # noqa: E402
 from dxagent.service.agent import AgentService  # noqa: E402
 from dxagent.settings import AgentSettings, AutomationMode, SecretStore  # noqa: E402
 
-API_URL = "https://api.test/api/agent/v1"
-TOKEN = "test-token-123456"
+API_URL = "https://tienda.test/hcgi/api"
+TOKEN = "dxa_test_token_123456"
 FAST_ENGINE = {"settle_s": 0.0, "poll_interval_s": 0.01, "screen_wait_timeout_s": 0.3}
 
 
@@ -52,11 +53,11 @@ def device():
 
 
 def make_api(backend: MockHorizonsBackend, token: str = TOKEN) -> HorizonsApiClient:
-    return HorizonsApiClient(API_URL, backend.agent_id, token, ApiContract.load(), transport=backend.transport())
+    return HorizonsApiClient(API_URL, token, ApiContract.load(), agent_name="PC-PRUEBAS", transport=backend.transport())
 
 
 def make_settings(**overrides) -> AgentSettings:
-    base = dict(api_url=API_URL, agent_id="agent-test", poll_interval_seconds=0.01, heartbeat_interval_seconds=0.05,
+    base = dict(api_url=API_URL, agent_name="PC-PRUEBAS", poll_interval_seconds=0.01, heartbeat_interval_seconds=0.05,
                 outbox_sync_interval_seconds=0.01, watchdog_interval_seconds=0.05, vision_backend="disabled",
                 automation_mode=AutomationMode.SIMULATION, approval_timeout_seconds=2.0, freeze_threshold_seconds=0.0)
     base.update(overrides)

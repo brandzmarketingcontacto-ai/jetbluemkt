@@ -42,22 +42,26 @@
 | RecoveryManager | `engine/recovery.py` |
 | Watchdog | `service/watchdog.py` |
 | LocalDatabase | `database.py` |
+| LocalAuditLog | `audit.py` (`logs\\audit.jsonl`, encadenado por hash) |
 | SettingsManager | `settings.py` |
 | Windows | `winplatform.py` (inicio automático, suspensión, instancia única, sesión interactiva) |
 
-## Ciclo de un pedido
+## Ciclo de una tarea (contrato oficial de Horizons)
 
-1. `listPendingJobs` → validación Pydantic → descarte de duplicados (trabajo o pedido ya conocido).
-2. `claimJob` atómico → bloqueo local por **instancia Android** y por **cuenta del juego**.
-3. Validación contra las reglas del flujo (formato de ID, producto configurado).
-4. Pasos previos (abrir app, navegar, escribir destinatario, elegir producto). Reintentos acotados.
-5. `verify_fields`: lo que se ve en pantalla debe coincidir con el pedido.
-6. `getJob`: el pedido sigue asignado y no fue cancelado.
-7. Aprobación según el modo (humana en SUPERVISADO, registrada con nombre de operador y usuario de Windows).
-8. Checkpoint durable `commit_started` → **un único toque** → `commit_sent`.
-9. `verify_result`: pantalla de éxito + destinatario/producto del resultado + referencia; IA opcional
-   como segunda verificación independiente. Evidencias guardadas y enviadas.
-10. Resultado al outbox → sincronización idempotente con Horizons.
+1. `POST /agent/heartbeat` → modo y pausa del servidor. Solo se reclama si son compatibles con el modo local.
+2. `POST /agent/tasks/claim` (CAS + lease) → validación Pydantic → descarte de duplicados (tarea o pedido ya
+   procesado: se reenvía el resultado, nunca se repite la entrega) → bloqueo local por instancia y cuenta.
+3. Plan: `simulate=true` → flujo de simulación; tarea real → flujo real validado + modo efectivo.
+4. Pasos previos (abrir app, navegar, escribir destinatario, elegir producto), con progreso `processing`
+   (renueva el lease) y un vigilante que mantiene el lease durante las esperas.
+5. `verify_fields`: lo que se ve en pantalla debe coincidir con la tarea.
+6. Progreso en vivo justo antes de enviar: si Horizons responde 409, no se envía.
+7. Aprobación según el modo (humana en SUPERVISADO, con nombre del operador).
+8. Checkpoint durable `commit_started` → **un único toque** → `commit_sent` → progreso `verifying`.
+9. `verify_result`: pantalla de éxito + datos del resultado + referencia (→ `giftCode`); IA opcional como segunda
+   verificación. Evidencias en disco; sus hashes en el resultado.
+10. `POST /agent/tasks/{id}/result` con `usage` real de OpenAI, desde el outbox (idempotente, FIFO, con backoff).
+11. Al arrancar: recuperación local + `GET /agent/tasks/current` para reconciliar.
 
 ## Uso de OpenAI solo cuando aporta valor
 

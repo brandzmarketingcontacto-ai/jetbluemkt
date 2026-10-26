@@ -35,9 +35,10 @@ async def test_supervised_requires_human_approval_and_records_approver(agent_fac
     row = db.get_job("job-s1")
     assert row["status"] == JobStatus.COMPLETED.value
     assert row["approved_by"] == "Ana (operadora)"
-    assert "123456789" in request["summary_json"]
+    assert "588141749" in request["summary_json"]
     await agent.sync.flush_all()
-    assert backend.completions["job-s1"]["approved_by"] == "Ana (operadora)"
+    assert backend.results["job-s1"]["evidence"]["approvedBy"] == "Ana (operadora)"
+    assert backend.results["job-s1"]["evidence"]["agentMode"] == "SUPERVISED"
 
 
 async def test_supervised_rejection_never_sends(agent_factory, backend, device, db):
@@ -141,17 +142,46 @@ async def test_emergency_stop_before_commit(agent_factory, backend, device, db, 
     assert not (tmp_path / "EMERGENCY_STOP").exists()
 
 
-async def test_backend_can_only_pause_or_resume(agent_factory, backend):
+async def test_server_controls_only_mode_and_pause(agent_factory, backend):
     agent = agent_factory()
     await agent.startup()
     original = backend._op_heartbeat
 
-    def ask_pause(*a, **k):
-        original(*a, **k)
-        return 200, {"requested_state": "paused", "command": "format c:"}
-    backend._op_heartbeat = ask_pause
+    def with_extra(*a, **k):
+        status, body = original(*a, **k)
+        return status, {**body, "paused": True, "command": "format c:"}  # campos desconocidos se ignoran
+    backend._op_heartbeat = with_extra
     await agent.send_heartbeat()
-    assert agent.state.value == "PAUSED"
+    assert agent.api.state.paused is True
+    assert await agent.work_once() is False
+    assert agent.state.value == "SERVER_HOLD"
+
+
+def test_plan_for_combines_server_and_local_modes(agent_factory):
+    from conftest import make_settings
+    from dxagent.models import Job
+    from dxagent.settings import AutomationMode
+
+    def plan(local, task):
+        agent = agent_factory(settings=make_settings(automation_mode=local))
+        agent.sim_workflow = load_workflow("simulation_gift")
+        real = agent.sim_workflow.model_copy(deep=True)
+        real.simulation, real.allowed_modes = False, ["SUPERVISED", "AUTHORIZED_PRODUCTION"]
+        agent.workflow = real
+        wf, mode, problem = agent.plan_for(Job.from_task(task))
+        return (wf.simulation if wf else None), mode, problem
+
+    base = {"id": "t1", "orderCode": "DX-1", "playerId": "588141749", "kind": "pase_booyah", "productName": "Pase Booyah"}
+    # Cualquier señal de simulación -> flujo de simulación, nunca el juego.
+    assert plan(AutomationMode.AUTHORIZED_PRODUCTION, {**base, "mode": "production", "simulated": True})[:2] == (True, "SIMULATION")
+    assert plan(AutomationMode.SUPERVISED, {**base, "mode": "simulation"})[:2] == (True, "SUPERVISED")
+    # Servidor supervised -> aprobación humana local.
+    assert plan(AutomationMode.AUTHORIZED_PRODUCTION, {**base, "mode": "supervised"})[:2] == (False, "SUPERVISED")
+    # Servidor production pero modo local SUPERVISADO -> se exige aprobación humana.
+    assert plan(AutomationMode.SUPERVISED, {**base, "mode": "production"})[:2] == (False, "SUPERVISED")
+    # Producción local sin autorización validada en el flujo -> no se ejecuta.
+    wf, mode, problem = plan(AutomationMode.AUTHORIZED_PRODUCTION, {**base, "mode": "production"})
+    assert wf is None and "autorización" in problem
 
 
 async def test_service_restart_keeps_manual_pause_and_applies_recent_commands(agent_factory, db):

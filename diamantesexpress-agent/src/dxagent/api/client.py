@@ -1,9 +1,9 @@
-"""HorizonsApiClient: comunicación segura con el backend de DiamantesExpress.
+"""HorizonsApiClient: comunicación con la API real de DiamantesExpress (`/hcgi/api/agent/...`).
 
 - Solo HTTPS (HTTP únicamente hacia localhost y si se habilita explícitamente para pruebas).
-- Rutas resueltas por operationId desde el contrato OpenAPI.
-- Idempotency-Key en todas las escrituras.
-- Clasificación de errores: ApiUnavailable (reintentable), AuthError, ConflictError.
+- Autenticación `Authorization: Bearer dxa_...` (token creado en Automatización → Tokens del agente).
+- El agente inicia todas las llamadas (Horizons no recibe conexiones entrantes).
+- Clasificación de errores: ApiUnavailable (reintentable), AuthError, ConflictError, NotFoundError.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import platform
-from pathlib import Path
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
 
@@ -19,8 +19,7 @@ import httpx
 
 from dxagent import __version__
 from dxagent.api.contract import ApiContract
-from dxagent.api.errors import ApiError, ApiUnavailable, AuthError, ConflictError, InsecureUrlError
-from dxagent.models import Job
+from dxagent.api.errors import ApiError, ApiUnavailable, AuthError, ConflictError, InsecureUrlError, NotFoundError
 
 log = logging.getLogger(__name__)
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
@@ -28,7 +27,7 @@ LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 def validate_base_url(url: str, allow_insecure_localhost: bool) -> str:
     if not url:
-        raise ApiError("DIAMANTESEXPRESS_API_URL no está configurada")
+        raise ApiError("DX_API_BASE_URL no está configurada (https://<dominio-publicado>/hcgi/api)")
     parsed = urlparse(url)
     if parsed.scheme == "https" and parsed.netloc:
         return url.rstrip("/")
@@ -37,110 +36,138 @@ def validate_base_url(url: str, allow_insecure_localhost: bool) -> str:
     raise InsecureUrlError(f"La URL de la API debe usar HTTPS: {url}")
 
 
+@dataclass
+class ServerState:
+    """Estado del sistema según el último heartbeat/claim. El servidor manda."""
+    mode: str | None = None              # off | simulation | supervised | production
+    paused: bool = False
+    accepted: bool = True
+    booyah_agent: bool | None = None
+    lease_seconds: int = 300
+    max_attempts: int | None = None
+    poll_after_seconds: float | None = None
+    server_time: str | None = None
+    last_reason: str | None = None       # motivo del último claim sin tarea
+    instructions: list[str] = field(default_factory=list)
+
+    @property
+    def dispatching(self) -> bool:
+        return self.mode not in (None, "off") and not self.paused and self.accepted
+
+
+@dataclass
+class ClaimResult:
+    task: dict[str, Any] | None
+    reason: str | None
+    mode: str | None
+    simulate: bool
+    lease_seconds: int | None
+    instructions: list[str]
+
+
 class HorizonsApiClient:
-    def __init__(self, base_url: str, agent_id: str, token: str | None, contract: ApiContract,
+    def __init__(self, base_url: str, token: str | None, contract: ApiContract, *, agent_name: str = "",
                  timeout: float = 20.0, allow_insecure_localhost: bool = False,
                  transport: httpx.AsyncBaseTransport | None = None):
         self.base_url = validate_base_url(base_url, allow_insecure_localhost)
-        self.agent_id = agent_id
         self._token = token
+        self.agent_name = (agent_name or platform.node() or "dxagent")[:80]
         self.contract = contract
+        self.state = ServerState()
         self._client = httpx.AsyncClient(
             base_url=self.base_url, timeout=timeout, transport=transport,
             headers={"User-Agent": f"DiamantesExpressAgent/{__version__}", "Accept": "application/json"},
         )
 
+    @property
+    def agent_id(self) -> str:
+        """Identificador local para registros (el servidor identifica al agente por su token)."""
+        return self.agent_name
+
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    def set_credentials(self, agent_id: str, token: str) -> None:
-        self.agent_id, self._token = agent_id, token
+    def set_token(self, token: str) -> None:
+        self._token = token
 
     # ------------------------------------------------------------------ núcleo
-    async def _request(self, operation_id: str, *, path_params: dict[str, str] | None = None,
-                       json_body: Any = None, params: dict[str, Any] | None = None,
-                       files: dict | None = None, data: dict | None = None,
-                       idempotency_key: str | None = None, auth: bool = True) -> Any:
-        op = self.contract.get(operation_id)
+    async def _request(self, name: str, *, path_params: dict[str, str] | None = None,
+                       json_body: Any = None, idempotency_key: str | None = None) -> Any:
+        op = self.contract.get(name)
         url = op.render(**(path_params or {}))
-        headers: dict[str, str] = {}
-        if auth:
-            if not self._token:
-                raise AuthError("No hay token de agente configurado. Empareje el agente.")
-            headers["Authorization"] = f"Bearer {self._token}"
+        if not self._token:
+            raise AuthError("No hay token de agente (dxa_...). Créelo en Automatización → Tokens del agente.")
+        headers = {"Authorization": f"Bearer {self._token}"}
         if idempotency_key:
             headers["Idempotency-Key"] = idempotency_key
         try:
-            response = await self._client.request(op.method, url, json=json_body, params=params,
-                                                   files=files, data=data, headers=headers)
+            response = await self._client.request(op.method, url, json=json_body, headers=headers)
         except (httpx.TransportError, httpx.TimeoutException) as exc:
-            raise ApiUnavailable(f"API no disponible ({operation_id}): {type(exc).__name__}") from exc
+            raise ApiUnavailable(f"API no disponible ({name}): {type(exc).__name__}") from exc
         status = response.status_code
-        body: Any
         try:
-            body = response.json() if response.content else {}
+            body: Any = response.json() if response.content else {}
         except json.JSONDecodeError:
             body = {"raw": response.text[:500]}
+        code = body.get("error") if isinstance(body, dict) else None
         if status in (401, 403):
-            raise AuthError(f"Credenciales rechazadas por la API ({status})", status, body)
+            raise AuthError(f"Token rechazado por la API ({status} {code or ''})".strip(), status, body)
+        if status == 404:
+            raise NotFoundError(f"{name}: {code or 'no encontrado'}", status, body)
         if status == 409:
-            raise ConflictError(f"Conflicto en {operation_id}", status, body)
+            raise ConflictError(f"{name}: {code or 'conflicto'}", status, body)
         if status == 429 or status >= 500:
-            raise ApiUnavailable(f"API respondió {status} en {operation_id}", status, body)
+            raise ApiUnavailable(f"API respondió {status} en {name}", status, body)
         if status >= 400:
-            raise ApiError(f"API respondió {status} en {operation_id}", status, body)
+            raise ApiError(f"API respondió {status} en {name}: {code or ''}", status, body)
         return body
 
     # -------------------------------------------------------------- operaciones
-    async def pair(self, pairing_code: str) -> dict[str, Any]:
-        body = await self._request("pairAgent", auth=False, json_body={
-            "pairing_code": pairing_code, "machine_name": platform.node(), "agent_version": __version__})
-        if not body.get("agent_id") or not body.get("agent_token"):
-            raise ApiError("Respuesta de emparejamiento incompleta")
-        self.set_credentials(body["agent_id"], body["agent_token"])
-        return body
+    async def heartbeat(self) -> ServerState:
+        body = await self._request("heartbeat", json_body={"hostname": self.agent_name,
+                                                           "appVersion": __version__[:40]})
+        st = self.state
+        st.mode = body.get("mode", st.mode)
+        st.paused = bool(body.get("paused", False))
+        st.accepted = bool(body.get("accepted", True))
+        st.booyah_agent = body.get("booyahAgent", st.booyah_agent)
+        st.lease_seconds = int(body.get("leaseSeconds") or st.lease_seconds)
+        st.max_attempts = body.get("maxAttempts", st.max_attempts)
+        st.poll_after_seconds = body.get("pollAfterSeconds", st.poll_after_seconds)
+        st.server_time = body.get("serverTime")
+        return st
 
-    async def heartbeat(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await self._request("sendHeartbeat", path_params={"agent_id": self.agent_id}, json_body=payload)
+    async def claim_task(self) -> ClaimResult:
+        body = await self._request("claimTask", json_body={})
+        result = ClaimResult(task=body.get("task"), reason=body.get("reason"), mode=body.get("mode"),
+                             simulate=bool(body.get("simulate", False)), lease_seconds=body.get("leaseSeconds"),
+                             instructions=list(body.get("instructions") or []))
+        if result.mode:
+            self.state.mode = result.mode
+        if result.lease_seconds:
+            self.state.lease_seconds = int(result.lease_seconds)
+        self.state.last_reason = None if result.task else result.reason
+        self.state.instructions = result.instructions
+        if result.reason == "paused":
+            self.state.paused = True
+        return result
 
-    async def get_config(self) -> dict[str, Any]:
-        return await self._request("getAgentConfig", path_params={"agent_id": self.agent_id})
+    async def current_tasks(self) -> list[dict[str, Any]]:
+        body = await self._request("currentTasks")
+        return list(body.get("tasks") or [])
 
-    async def list_pending_jobs(self, limit: int = 5) -> list[dict[str, Any]]:
-        body = await self._request("listPendingJobs", path_params={"agent_id": self.agent_id}, params={"limit": limit})
-        jobs = body.get("jobs", []) if isinstance(body, dict) else body
-        return list(jobs or [])
-
-    async def claim_job(self, job_id: str, instance: str) -> Job:
-        body = await self._request("claimJob", path_params={"job_id": job_id},
-                                   json_body={"agent_id": self.agent_id, "instance": instance},
-                                   idempotency_key=f"claim:{self.agent_id}:{job_id}")
-        return Job.model_validate(body)
-
-    async def get_job(self, job_id: str) -> dict[str, Any]:
-        return await self._request("getJob", path_params={"job_id": job_id})
-
-    async def report_progress(self, job_id: str, payload: dict, idem: str) -> Any:
-        return await self._request("reportProgress", path_params={"job_id": job_id}, json_body=payload, idempotency_key=idem)
-
-    async def report_usage(self, records: list[dict], idem: str) -> Any:
-        return await self._request("reportUsage", json_body={"records": records}, idempotency_key=idem)
-
-    async def upload_evidence(self, job_id: str, metadata: dict, file_path: str, idem: str) -> Any:
-        path = Path(file_path)
-        content = path.read_bytes() if path.exists() else b""
-        mime = "image/png" if path.suffix == ".png" else "application/octet-stream"
-        return await self._request("uploadEvidence", path_params={"job_id": job_id},
-                                   data={"metadata": json.dumps(metadata)},
-                                   files={"file": (path.name, content, mime)}, idempotency_key=idem)
-
-    async def complete_job(self, job_id: str, outcome: dict, idem: str) -> Any:
-        return await self._request("completeJob", path_params={"job_id": job_id}, json_body=outcome, idempotency_key=idem)
-
-    async def release_job(self, job_id: str, reason: str, idem: str) -> Any:
-        return await self._request("releaseJob", path_params={"job_id": job_id}, json_body={"reason": reason},
+    async def report_progress(self, task_id: str, status: str, message: str = "",
+                              evidence: dict | None = None, idem: str | None = None) -> dict:
+        if status not in ("processing", "verifying"):
+            raise ValueError("status de progreso debe ser processing o verifying")
+        payload: dict[str, Any] = {"status": status, "message": message[:1000]}
+        if evidence:
+            payload["evidence"] = evidence
+        return await self._request("reportProgress", path_params={"id": task_id}, json_body=payload,
                                    idempotency_key=idem)
 
-    async def report_alert(self, payload: dict, idem: str) -> Any:
-        return await self._request("reportAlert", path_params={"agent_id": self.agent_id}, json_body=payload,
+    async def report_result(self, task_id: str, payload: dict, idem: str | None = None) -> dict:
+        if payload.get("outcome") not in ("completed", "failed", "uncertain"):
+            raise ValueError("outcome debe ser completed, failed o uncertain")
+        return await self._request("reportResult", path_params={"id": task_id}, json_body=payload,
                                    idempotency_key=idem)

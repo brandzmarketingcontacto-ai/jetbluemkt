@@ -6,7 +6,7 @@ import logging
 import pytest
 
 from dxagent.ai.pricing import PricingTable
-from dxagent.api.client import HorizonsApiClient, validate_base_url
+from dxagent.api.client import validate_base_url
 from dxagent.api.contract import ApiContract
 from dxagent.api.errors import ContractError, InsecureUrlError
 from dxagent.engine.policy import ExecutionLimits, ExecutionPolicy, PolicyViolation
@@ -34,12 +34,18 @@ def test_secrets_redacted_from_logs():
 
 
 def test_settings_env_precedence_and_no_secrets_on_disk(tmp_path):
-    env = {"DIAMANTESEXPRESS_API_URL": "https://x.example/api/", "AUTOMATION_MODE": "SUPERVISED",
-           "DIAMANTESEXPRESS_AGENT_TOKEN": "tok-desde-env-123", "DXAGENT_MAX_ACTIONS_PER_ORDER": "12"}
+    env = {"DX_API_BASE_URL": "https://x.example/hcgi/api/", "AGENT_MODE": "supervised",
+           "DX_AGENT_TOKEN": "tok-desde-env-123", "DXAGENT_MAX_ACTIONS_PER_ORDER": "12",
+           "DX_AGENT_NAME": "PC-WINDOWS-01", "ADB_DEVICE_SERIAL": "emulator-5554", "AGENT_POLL_SECONDS": "15",
+           "DIAMANTESEXPRESS_API_URL": "https://alias-viejo.example/api"}
     manager = SettingsManager(tmp_path / "settings.json", env=env, env_file=tmp_path / ".env",
                               secrets=SecretStore(env=env, use_keyring=False))
     s = manager.load()
-    assert s.api_url == "https://x.example/api" and s.automation_mode.value == "SUPERVISED"
+    assert s.api_url == "https://x.example/hcgi/api"  # el nombre oficial gana al alias anterior
+    assert s.automation_mode.value == "SUPERVISED"
+    assert (s.agent_name, s.adb_serial, s.poll_interval_seconds) == ("PC-WINDOWS-01", "emulator-5554", 15)
+    env["AGENT_MODE"] = "production"
+    assert manager.load().automation_mode.value == "AUTHORIZED_PRODUCTION"
     assert s.max_actions_per_order == 12
     assert manager.secrets.get("agent_token") == "tok-desde-env-123"
     manager.save(s)
@@ -47,14 +53,16 @@ def test_settings_env_precedence_and_no_secrets_on_disk(tmp_path):
     assert "agent_token" not in json.loads((tmp_path / "settings.json").read_text())
 
 
-def test_contract_resolution_and_overrides(tmp_path):
+def test_official_contract_and_overrides(tmp_path):
     contract = ApiContract.load()
-    assert contract.get("claimJob").render(job_id="a/b") == "/jobs/a%2Fb/claim"
-    over = ApiContract.load(overrides={"claimJob": "PUT /v2/tareas/{job_id}/reclamar"})
-    assert over.get("claimJob").method == "PUT"
-    broken = tmp_path / "c.yaml"
-    broken.write_text("openapi: 3.1.0\npaths: {}\n")
-    with pytest.raises(ContractError):
+    assert contract.version == "1.0.0"
+    assert contract.get("claimTask").method == "POST" and contract.get("claimTask").path == "/agent/tasks/claim"
+    assert contract.get("reportResult").render(id="a/b") == "/agent/tasks/a%2Fb/result"
+    over = ApiContract.load(overrides={"claimTask": "POST /agent/v2/tasks/claim"})
+    assert over.get("claimTask").path == "/agent/v2/tasks/claim"
+    broken = tmp_path / "c.json"
+    broken.write_text('{"openapi": "3.0.3", "paths": {"/agent/heartbeat": {"post": {}}}}')
+    with pytest.raises(ContractError, match="/agent/tasks/claim"):
         ApiContract.load(broken)
 
 
@@ -73,16 +81,21 @@ def test_usage_tracker_refuses_unpriced_model(db):
     assert err.value.code == "PRICING_MISSING"
 
 
-def test_usage_records_are_idempotent_in_outbox(db):
+def test_usage_records_idempotent_and_aggregated_for_result(db):
     from types import SimpleNamespace as NS
-    from dxagent.ai.usage import UsageTracker
+    from dxagent.ai.usage import UsageTracker, usage_for_result
     tracker = UsageTracker(db, PricingTable.load(), "a", 1, 1, 5)
-    usage = NS(input_tokens=10, output_tokens=5, total_tokens=15, input_tokens_details=NS(cached_tokens=0),
+    usage = NS(input_tokens=1000, output_tokens=300, total_tokens=1300, input_tokens_details=NS(cached_tokens=200),
                output_tokens_details=NS(reasoning_tokens=0))
     rec = tracker.record(model="gpt-4.1-mini", job_id="j", order_id="o", usage=usage, request_id="r",
                          response_id="x", latency_ms=5)
-    assert db.enqueue("usage", f"usage:{rec.record_id}", rec.model_dump(), "j") is False
-    assert db.insert_usage(rec) is False
+    tracker.record(model="gpt-4.1-mini", job_id="j", order_id="o", usage=usage, request_id="r2",
+                   response_id="x2", latency_ms=5)
+    assert db.insert_usage(rec) is False  # el mismo registro no se duplica
+    total = usage_for_result(db, "j", "gpt-4.1-mini")
+    assert (total.prompt_tokens, total.completion_tokens, total.cached_tokens) == (2000, 600, 400)
+    assert total.cost_usd == pytest.approx(2 * (800 * 0.40 + 200 * 0.10 + 300 * 1.60) / 1e6)
+    assert usage_for_result(db, "otra", "m") is None
 
 
 def test_policy_allowlist_and_limits(tmp_path):
@@ -109,24 +122,59 @@ def test_policy_allowlist_and_limits(tmp_path):
 
 async def test_api_errors_are_classified(backend):
     from conftest import make_api
-    from dxagent.api.errors import ApiUnavailable, AuthError
+    from dxagent.api.errors import ApiUnavailable, AuthError, ConflictError, NotFoundError
     api = make_api(backend)
     backend.fail_statuses = [500]
     with pytest.raises(ApiUnavailable):
-        await api.get_config()
-    bad = make_api(backend, token="malo-0000000")
+        await api.heartbeat()
     with pytest.raises(AuthError):
-        await bad.get_config()
+        await make_api(backend, token="dxa_malo_000000").heartbeat()
+    with pytest.raises(NotFoundError):
+        await api.report_progress("no_existe", "processing")
+    backend.add_task(task_id="t_other")
+    backend.tasks["t_other"].update(status="processing", owner="otro-agente")
+    with pytest.raises(ConflictError):
+        await api.report_result("t_other", {"outcome": "completed"})
+    with pytest.raises(ValueError):
+        await api.report_progress("t_other", "completed")  # la API solo admite processing | verifying
     backend.down = True
     with pytest.raises(ApiUnavailable):
-        await api.heartbeat({})
+        await api.heartbeat()
 
 
-async def test_pairing_flow(backend):
-    api = HorizonsApiClient("https://api.test/v1", "", None, ApiContract.load(), transport=backend.transport())
-    result = await api.pair("PAIR-0001")
-    assert result["agent_id"] == "agent-test"
-    assert (await api.get_config()) == {"production_authorized": False}
-    from dxagent.api.errors import AuthError
-    with pytest.raises(AuthError):
-        await api.pair("PAIR-0001")  # código de un solo uso
+async def test_token_headers_and_claim_lease(backend):
+    from conftest import TOKEN, make_api
+    seen = {}
+    original = backend.handle
+
+    def spy(method, path, headers, body):
+        seen.update(path=path, auth=headers.get("authorization"))
+        return original(method, path, headers, body)
+    backend.handle = spy
+    api = make_api(backend)
+    assert (await api.claim_task()).reason == "empty"
+    assert seen == {"path": "/hcgi/api/agent/tasks/claim", "auth": f"Bearer {TOKEN}"}
+    backend.add_task(task_id="t1")
+    claim = await api.claim_task()
+    assert claim.task["id"] == "t1" and claim.simulate is True and claim.task["leaseExpiresAt"]
+    assert (await api.claim_task()).task is None  # reclamo atómico: no se entrega dos veces
+    assert [t["id"] for t in await api.current_tasks()] == ["t1"]
+
+
+async def test_audit_log_is_hash_chained_and_detects_tampering(tmp_path, backend, device):
+    from conftest import make_agent
+    from dxagent.audit import AuditLog
+    from dxagent.database import LocalDatabase
+    audit = AuditLog(tmp_path / "audit.jsonl")
+    db = LocalDatabase(tmp_path / "a.db", audit=audit)
+    backend.add_task(task_id="t_audit")
+    agent = make_agent(db, backend, device, tmp_path)
+    await agent.startup()
+    await agent.work_once()
+    events = [__import__("json").loads(line)["event"] for line in (tmp_path / "audit.jsonl").read_text().splitlines()]
+    assert events[:1] == ["claim"] and "commit_started" in events and "commit_sent" in events
+    assert "verified" in events and events[-1] == "finish"
+    assert AuditLog(tmp_path / "audit.jsonl").verify() == (True, len(events))
+    text = (tmp_path / "audit.jsonl").read_text().replace('"commit_sent"', '"commit_omitido"')
+    (tmp_path / "audit.jsonl").write_text(text)
+    assert AuditLog(tmp_path / "audit.jsonl").verify()[0] is False

@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller: genera dist/DiamantesExpressAgent/ con DiamantesExpressAgent.exe (ventana: ui/service)
-# y dxagent-cli.exe (consola: doctor, simulate, pair, set-secret...). Modo carpeta: arranque rápido.
+# y dxagent-cli.exe (consola: doctor, check-api, simulate, set-secret...). Modo carpeta: arranque rápido.
 # Uso:  pyinstaller packaging/dxagent.spec --noconfirm
 import os
 from pathlib import Path
@@ -33,7 +33,7 @@ exe = EXE(
     icon=str(ICON) if ICON.exists() else None,
     version=None,
 )
-# Ejecutable de consola para diagnóstico y comandos (doctor, simulate, pair, set-secret…).
+# Ejecutable de consola para diagnóstico y comandos (doctor, check-api, simulate, set-secret…).
 cli = EXE(
     pyz, a.scripts, [],
     exclude_binaries=True,

@@ -7,7 +7,7 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-from dxagent.models import AgentState, iso_now
+from dxagent.models import AgentState
 
 if TYPE_CHECKING:
     from dxagent.service.agent import AgentService
@@ -28,10 +28,9 @@ class Watchdog:
                 "heartbeat": s.heartbeat_interval_seconds * 3 + 30,
                 "sync": s.outbox_sync_interval_seconds * 3 + 60}.get(name)
 
-    def _alert(self, code: str, message: str, severity: str = "warning") -> None:
+    def _alert(self, code: str, message: str, severity: str = "WARNING") -> None:
         bucket = int(time.time() // 900)  # como máximo una alerta igual cada 15 minutos
-        self.agent.db.enqueue("alert", f"alert:{code}:{bucket}",
-                              {"severity": severity, "code": code, "message": message, "at": iso_now()})
+        self.agent.db.add_alert(f"{code}:{bucket}", severity.upper(), code, message)
 
     async def check_once(self) -> None:
         agent = self.agent
@@ -80,7 +79,7 @@ class Watchdog:
             return
         if not agent.recovery.restart_is_safe():
             self._alert("RESTART_BLOCKED", "Reinicio del emulador bloqueado: operación con resultado incierto",
-                        "critical")
+                        "CRITICAL")
             return
         try:
             if not agent.bluestacks.is_running():

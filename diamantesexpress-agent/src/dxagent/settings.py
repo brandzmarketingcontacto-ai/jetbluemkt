@@ -29,9 +29,9 @@ class AutomationMode(str, Enum):
 
 
 class AgentSettings(BaseModel):
-    # Backend DiamantesExpress (Hostinger Horizons)
+    # Backend DiamantesExpress (Hostinger Horizons): https://<dominio-publicado>/hcgi/api
     api_url: str = ""
-    agent_id: str = ""
+    agent_name: str = ""          # hostname enviado en el heartbeat (DX_AGENT_NAME)
     api_timeout_seconds: float = 20.0
     openapi_contract_path: str = ""
     route_overrides: dict[str, str] = Field(default_factory=dict)
@@ -55,7 +55,8 @@ class AgentSettings(BaseModel):
 
     # Modo y flujo
     automation_mode: AutomationMode = AutomationMode.SIMULATION
-    workflow_id: str = "simulation_gift"
+    workflow_id: str = "simulation_gift"             # flujo para tareas reales (supervised/production)
+    simulation_workflow_id: str = "simulation_gift"  # flujo para tareas con simulate=true
     approval_timeout_seconds: float = 600.0
     operator_name: str = ""
 
@@ -77,6 +78,7 @@ class AgentSettings(BaseModel):
     emulator_boot_timeout_seconds: float = 180.0
     freeze_threshold_seconds: float = 60.0
     allow_emulator_restart: bool = True
+    close_emulator_on_stop: bool = False
     account_key: str = "default"
 
     # 24/7
@@ -110,9 +112,17 @@ class AgentSettings(BaseModel):
 
 
 # Variables de entorno documentadas en la especificación -> campo de AgentSettings.
+# Variables de entorno -> campo de AgentSettings. Primero los nombres oficiales de la especificación
+# de DiamantesExpress (DX_*, ADB_*, AGENT_*); luego los alias de la versión anterior.
 ENV_MAP: dict[str, str] = {
+    "DX_API_BASE_URL": "api_url",
+    "DX_AGENT_NAME": "agent_name",
+    "ADB_PATH": "adb_path",
+    "ADB_DEVICE_SERIAL": "adb_serial",
+    "AGENT_POLL_SECONDS": "poll_interval_seconds",
+    "AGENT_HEARTBEAT_SECONDS": "heartbeat_interval_seconds",
+    "AGENT_MODE": "automation_mode",
     "DIAMANTESEXPRESS_API_URL": "api_url",
-    "DIAMANTESEXPRESS_AGENT_ID": "agent_id",
     "OPENAI_MODEL": "openai_model",
     "POLL_INTERVAL_SECONDS": "poll_interval_seconds",
     "HEARTBEAT_INTERVAL_SECONDS": "heartbeat_interval_seconds",
@@ -122,9 +132,12 @@ ENV_MAP: dict[str, str] = {
     "BLUESTACKS_INSTANCE": "bluestacks_instance",
 }
 SECRET_ENV = {
-    "agent_token": "DIAMANTESEXPRESS_AGENT_TOKEN",
-    "openai_api_key": "OPENAI_API_KEY",
+    "agent_token": ("DX_AGENT_TOKEN", "DIAMANTESEXPRESS_AGENT_TOKEN"),
+    "openai_api_key": ("OPENAI_API_KEY",),
 }
+# AGENT_MODE usa los nombres del servidor en minúsculas.
+MODE_ALIASES = {"simulation": "SIMULATION", "supervised": "SUPERVISED", "production": "AUTHORIZED_PRODUCTION",
+                "authorized_production": "AUTHORIZED_PRODUCTION"}
 ENV_PREFIX = "DXAGENT_"
 
 
@@ -170,7 +183,7 @@ class SecretStore:
                 except Exception as exc:  # backend no disponible
                     log.debug("keyring no disponible: %s", type(exc).__name__)
         if not value:
-            value = self._env.get(SECRET_ENV.get(name, ""), "") or None
+            value = next((self._env[e] for e in SECRET_ENV.get(name, ()) if self._env.get(e)), None)
         register_secret(value)
         return value
 
@@ -222,11 +235,15 @@ class SettingsManager:
                 data = json.loads(self.settings_file.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
                 log.error("settings.json ilegible, se usan valores por defecto: %s", exc)
+        data.pop("agent_id", None)  # campo de la versión anterior (el servidor identifica por token)
         env = self._merged_env()
         self.overridden = set()
-        for env_name, field in ENV_MAP.items():
+        for env_name, field in reversed(list(ENV_MAP.items())):  # los nombres oficiales tienen prioridad
             if env.get(env_name):
-                data[field] = env[env_name]
+                value = env[env_name]
+                if field == "automation_mode":
+                    value = MODE_ALIASES.get(value.strip().lower(), value.strip().upper())
+                data[field] = value
                 self.overridden.add(field)
         for field in AgentSettings.model_fields:
             env_name = ENV_PREFIX + field.upper()

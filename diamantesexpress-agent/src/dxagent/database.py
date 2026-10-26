@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     message TEXT,
     approved_by TEXT,
     result_json TEXT,
+    server_status TEXT,
     updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
@@ -112,6 +113,10 @@ CREATE TABLE IF NOT EXISTS events (
     message TEXT NOT NULL,
     job_id TEXT
 );
+CREATE TABLE IF NOT EXISTS alert_keys (
+    key TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS evidence (
     evidence_id TEXT PRIMARY KEY,
     job_id TEXT NOT NULL,
@@ -132,9 +137,13 @@ def _local_day_bounds_utc(now: datetime | None = None) -> tuple[str, str]:
     return start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()
 
 
+AUDITED_PHASES = {"commit_started", "commit_sent", "commit_uncertain", "verified"}
+
+
 class LocalDatabase:
-    def __init__(self, path: Path | str):
+    def __init__(self, path: Path | str, audit=None):
         self.path = str(path)
+        self.audit = audit  # AuditLog opcional (registro encadenado por hash)
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(self.path, check_same_thread=False, timeout=15, isolation_level=None)
         self._conn.row_factory = sqlite3.Row
@@ -227,6 +236,8 @@ class LocalDatabase:
 
     # -------------------------------------------------------------- checkpoints
     def add_checkpoint(self, job_id: str, step_id: str, phase: str, data: dict | None = None) -> None:
+        if self.audit is not None and phase in AUDITED_PHASES:
+            self.audit.append(phase, job_id=job_id, step=step_id, **(data or {}))
         self._exec("INSERT INTO checkpoints(job_id, step_id, phase, data_json, created_at) VALUES (?,?,?,?,?)",
                    (job_id, step_id, phase, json.dumps(data or {}, default=str), iso_now()))
 
@@ -306,6 +317,8 @@ class LocalDatabase:
                    " VALUES (?,?,?,?,?,?)", (approval_id, job_id, step_id, json.dumps(summary, default=str), "pending", iso_now()))
 
     def decide_approval(self, approval_id: str, approved: bool, decided_by: str, note: str = "") -> bool:
+        if self.audit is not None:
+            self.audit.append("approval", approval_id=approval_id, approved=approved, decided_by=decided_by)
         cur = self._exec("UPDATE approvals SET status=?, decided_at=?, decided_by=?, note=? WHERE approval_id=? AND status='pending'",
                          ("approved" if approved else "rejected", iso_now(), decided_by, note, approval_id))
         return cur.rowcount == 1
@@ -367,6 +380,29 @@ class LocalDatabase:
     def add_event(self, level: str, category: str, message: str, job_id: str | None = None) -> None:
         self._exec("INSERT INTO events(ts, level, category, message, job_id) VALUES (?,?,?,?,?)",
                    (iso_now(), level, category, message, job_id))
+
+    def add_alert(self, key: str, level: str, code: str, message: str, job_id: str | None = None) -> bool:
+        """Alerta local deduplicada por clave (la API de Horizons no tiene endpoint de alertas)."""
+        try:
+            self._exec("INSERT INTO alert_keys(key, created_at) VALUES (?,?)", (key, iso_now()))
+        except sqlite3.IntegrityError:
+            return False
+        if self.audit is not None:
+            self.audit.append("alert", code=code, level=level, message=message, job_id=job_id)
+        self.add_event(level, "alert", f"[{code}] {message}", job_id)
+        return True
+
+    def alerts(self) -> list[dict[str, Any]]:
+        return self._all("SELECT * FROM events WHERE category='alert' ORDER BY id")
+
+    def outbox_item(self, idem_key: str) -> dict[str, Any] | None:
+        return self._one("SELECT * FROM outbox WHERE idem_key=?", (idem_key,))
+
+    def outbox_requeue(self, idem_key: str) -> None:
+        self._exec("UPDATE outbox SET state='pending', next_attempt_at=0 WHERE idem_key=?", (idem_key,))
+
+    def usage_for_job(self, job_id: str) -> list[dict[str, Any]]:
+        return self._all("SELECT * FROM usage WHERE job_id=? ORDER BY created_at", (job_id,))
 
     def recent_events(self, limit: int = 200) -> list[dict[str, Any]]:
         return self._all("SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,))

@@ -24,17 +24,20 @@ Los datos quedan en `%LOCALAPPDATA%\DiamantesExpressAgent\` (base de datos, logs
 
 ## 4. Configurar (pestaña Configuración)
 
-1. **URL de la API** que entregue Horizons (solo HTTPS).
-2. **Emparejamiento**: genere un código en el panel de superadministrador e ingréselo. El token queda en el
-   Administrador de credenciales de Windows; nunca en archivos.
+1. **URL de la API**: `https://<dominio-publicado>/hcgi/api` (solo HTTPS).
+2. **Token del agente**: en DiamantesExpress, *Automatización → Tokens del agente* → crear. Copie el `dxa_...`
+   (se muestra una sola vez) y péguelo en *Claves y secretos → Guardar token*. Queda en el Administrador de
+   credenciales de Windows (DPAPI), nunca en archivos. Pulse *Probar conexión*: debe mostrar el modo del servidor.
 3. **Clave OpenAI**: guárdela y pulse *Verificar clave* (no consume tokens).
 4. **BlueStacks**: *Dispositivo = BlueStacks 5 por ADB* → *Detectar instalación e instancias* → elija la instancia.
    Si la detección falla, complete la carpeta de instalación, `bluestacks.conf` y/o el serial ADB.
-5. **Modo**: empiece en **SIMULACIÓN** con el flujo `simulation_gift`.
+5. **Modo local**: empiece en **SIMULACIÓN**. El modo efectivo lo decide DiamantesExpress (*Automatización*); el
+   local solo restringe. Para la fase de pruebas ponga el servidor en `simulation` y encole tareas con *Simular*.
 6. **Presupuesto**: costo máximo por pedido y presupuesto diario.
 7. **24/7**: inicio automático, impedir suspensión (opcional, requiere su consentimiento) y reinicio seguro del emulador.
 
-Alternativa por consola: `dxagent-cli.exe pair --code XXXX`, `dxagent-cli.exe set-secret openai-key`.
+Alternativa por consola: `dxagent-cli.exe set-secret agent-token`, `dxagent-cli.exe set-secret openai-key` y
+`dxagent-cli.exe check-api` (heartbeat real, no reclama tareas).
 
 ## 5. Energía y suspensión (PC 24/7)
 

@@ -80,10 +80,13 @@ class WorkflowEngine:
 
     # ------------------------------------------------------------- utilidades
     def _report(self, job: Job, status: str, step: str, message: str) -> None:
+        """Progreso para /agent/tasks/{id}/progress (solo admite processing | verifying; renueva el lease)."""
         self._progress_seq += 1
+        api_status = "verifying" if status == "verifying" else "processing"
         self.db.enqueue("progress", f"progress:{job.job_id}:{job.attempt}:{self._progress_seq}",
-                        {"status": status, "step": step, "message": message,
-                         "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}, job.job_id)
+                        {"status": api_status, "message": message,
+                         "evidence": {"step": step, "state": status, "simulated": job.simulated,
+                                      "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}}, job.job_id)
 
     def _live(self, job: Job, **fields: Any) -> None:
         current = self.db.get_status("current_job") or {}
@@ -234,6 +237,7 @@ class WorkflowEngine:
 
         # ------------------------------------------------- verificación posterior
         self.db.update_job(job.job_id, status=JobStatus.VERIFYING)
+        self._report(job, "verifying", commit.id, "Paso de entrega ejecutado; verificando el resultado")
         self._live(job, step="verificacion", status=JobStatus.VERIFYING.value, actions=policy.actions)
         verify_steps = self.wf.steps[commit_index + 1:]
         verification: VerificationResult | None = None
@@ -371,8 +375,8 @@ class WorkflowEngine:
                 raise StepFailed("BACKEND_UNREACHABLE", f"No se pudo confirmar el pedido con el backend: {exc}",
                                  retryable=False) from exc
             if not ok:
-                raise StepFailed("JOB_NO_LONGER_ASSIGNED", "El pedido ya no está asignado a este agente",
-                                 order_fault=True, retryable=False)
+                raise StepFailed("JOB_NO_LONGER_ASSIGNED", "La tarea ya no está asignada a este agente "
+                                 "(lease vencido, cancelada o reasignada)", retryable=False)
         # 2) Aprobación según el modo
         obs = await observer.observe("Resumen previo al envío")
         checked = await self._check_fields(verify_step, ctx, obs, observer)

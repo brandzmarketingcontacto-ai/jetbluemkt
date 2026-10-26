@@ -2,10 +2,14 @@
 
 Bucles asíncronos:
 - control:   comandos de la interfaz (iniciar, pausar, detener, emergencia) vía SQLite.
-- heartbeat: estado del agente hacia DiamantesExpress.
-- sync:      envío del outbox (progreso, consumo, evidencias, resultados, alertas).
-- work:      reclamación y ejecución de trabajos, de a uno por instancia Android.
+- heartbeat: POST /agent/heartbeat; lee el modo y la pausa que decide DiamantesExpress.
+- sync:      envío del outbox (progreso y resultados con uso de OpenAI y evidencia).
+- work:      POST /agent/tasks/claim y ejecución de una tarea a la vez por instancia Android.
 - watchdog:  supervisión de bucles, Internet y emulador.
+
+El servidor manda: el agente solo reclama tareas cuando el modo del servidor es compatible con el
+modo local, y una tarea con simulate/simulated=true se ejecuta SIEMPRE con el flujo de simulación
+(la lista de paquetes autorizados de ese flujo impide tocar el juego).
 """
 
 from __future__ import annotations
@@ -14,8 +18,8 @@ import asyncio
 import logging
 import os
 import time
-from datetime import datetime
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Awaitable, Callable
 
 from dxagent import __version__, paths
@@ -24,7 +28,7 @@ from dxagent.ai.usage import UsageTracker
 from dxagent.ai.vision import OpenAIVisionAgent, build_openai_client
 from dxagent.api.client import HorizonsApiClient
 from dxagent.api.contract import ApiContract
-from dxagent.api.errors import ApiError, ApiUnavailable, AuthError
+from dxagent.api.errors import ApiError, ApiUnavailable, AuthError, ConflictError, NotFoundError
 from dxagent.android.device import DeviceController, DeviceError
 from dxagent.database import LocalDatabase
 from dxagent.engine.approval import ApprovalManager
@@ -36,10 +40,17 @@ from dxagent.models import AgentState, Job, JobOutcome, JobStatus, iso_now
 from dxagent.service.job_queue import JobQueueManager
 from dxagent.service.sync import OutboxSync
 from dxagent.service.watchdog import Watchdog
-from dxagent.settings import AgentSettings, SecretStore
+from dxagent.settings import AgentSettings, AutomationMode, SecretStore
 
 log = logging.getLogger(__name__)
 DeviceFactory = Callable[[], Awaitable[DeviceController]]
+
+# Modos del servidor que cada modo local acepta reclamar.
+COMPATIBLE_SERVER_MODES = {
+    AutomationMode.SIMULATION: {"simulation"},
+    AutomationMode.SUPERVISED: {"simulation", "supervised"},
+    AutomationMode.AUTHORIZED_PRODUCTION: {"simulation", "supervised", "production"},
+}
 
 
 @dataclass
@@ -51,6 +62,7 @@ class Health:
     device_error: str | None = None
     device_last_ok: float | None = None
     emulator_running: bool | None = None
+    server_checked_at: float | None = None
     liveness: dict[str, float] = field(default_factory=dict)
 
 
@@ -68,34 +80,39 @@ class AgentService:
         self.live_screenshot = live_screenshot
         self.health = Health()
         self.state = AgentState.STOPPED
+        self.state_reason = ""
         self.desired_running = autostart_running
         self.stopping = asyncio.Event()
         self.current_job: Job | None = None
-        self.production_authorized = False
         self.engine_overrides = engine_overrides or {}
+        self.reconciled = False
+        self.lease_lost: set[str] = set()
 
         self.api = api or self._build_api()
         self.pricing = PricingTable.load(settings.pricing_path or None)
-        self.tracker = UsageTracker(db, self.pricing, settings.agent_id or self.api.agent_id,
+        self.tracker = UsageTracker(db, self.pricing, self.api.agent_id,
                                     settings.max_ai_cost_per_order_usd, settings.daily_ai_budget_usd,
                                     settings.max_ai_requests_per_order, settings.ai_reserve_per_request_usd)
         self.vision = vision if vision is not None else self._build_vision()
-        self.workflow = workflow
+        self.workflow = workflow            # flujo configurado (real o de simulación)
+        self.sim_workflow: WorkflowDef | None = None
         self.device_factory = device_factory
         self.device: DeviceController | None = None
-        self.queue = JobQueueManager(db, self.api, settings.bluestacks_instance or "default", settings.account_key)
+        self.evidence = EvidenceManager(db, evidence_root or paths.evidence_dir())
+        self.queue = JobQueueManager(db, self.api, settings.bluestacks_instance or "default", settings.account_key,
+                                     self.evidence, settings.openai_model)
         self.sync = OutboxSync(db, self.api)
         self.recovery = RecoveryManager(db)
         self.approvals = ApprovalManager(db)
-        self.evidence = EvidenceManager(db, evidence_root or paths.evidence_dir())
         self.watchdog = Watchdog(self)
         self._tasks: dict[str, asyncio.Task] = {}
 
     # --------------------------------------------------------------- builders
     def _build_api(self) -> HorizonsApiClient:
         contract = ApiContract.load(self.settings.openapi_contract_path or None, self.settings.route_overrides)
-        return HorizonsApiClient(self.settings.api_url, self.settings.agent_id, self.secrets.get("agent_token"),
-                                 contract, self.settings.api_timeout_seconds, self.settings.allow_insecure_http_localhost)
+        return HorizonsApiClient(self.settings.api_url, self.secrets.get("agent_token"), contract,
+                                 agent_name=self.settings.agent_name, timeout=self.settings.api_timeout_seconds,
+                                 allow_insecure_localhost=self.settings.allow_insecure_http_localhost)
 
     def _build_vision(self) -> OpenAIVisionAgent | None:
         if self.settings.vision_backend == "disabled":
@@ -111,22 +128,26 @@ class AgentService:
 
     # ----------------------------------------------------------------- estado
     def set_state(self, state: AgentState, reason: str = "") -> None:
-        if state != self.state:
-            log.info("Estado del agente: %s -> %s %s", self.state.value, state.value, reason)
-            self.db.add_event("INFO" if state in (AgentState.RUNNING, AgentState.PAUSED) else "WARNING",
-                              "agent", f"Estado: {state.value} {reason}".strip())
-            self.state = state
+        if state != self.state or reason != self.state_reason:
+            if state != self.state:
+                log.info("Estado del agente: %s -> %s %s", self.state.value, state.value, reason)
+                self.db.add_event("INFO" if state in (AgentState.RUNNING, AgentState.PAUSED) else "WARNING",
+                                  "agent", f"Estado: {state.value} {reason}".strip())
+            self.state, self.state_reason = state, reason
 
     def publish_status(self) -> None:
+        srv = self.api.state
         self.db.set_status("agent", {
-            "state": self.state.value, "desired_running": self.desired_running, "pid": os.getpid(),
-            "version": __version__, "mode": self.settings.automation_mode.value,
+            "state": self.state.value, "state_reason": self.state_reason, "desired_running": self.desired_running,
+            "pid": os.getpid(), "version": __version__, "mode": self.settings.automation_mode.value,
             "workflow": self.workflow.id if self.workflow else self.settings.workflow_id,
+            "server": {"mode": srv.mode, "paused": srv.paused, "accepted": srv.accepted,
+                       "booyah_agent": srv.booyah_agent, "lease_seconds": srv.lease_seconds,
+                       "last_reason": srv.last_reason, "instructions": srv.instructions},
             "api_online": self.health.api_online, "api_error": self.health.api_error,
             "api_last_ok": self.health.api_last_ok, "device_ok": self.health.device_ok,
             "device_error": self.health.device_error, "emulator_running": self.health.emulator_running,
             "vision_enabled": self.vision is not None, "outbox_pending": self.db.outbox_pending_count(),
-            "pending_jobs": self.queue.last_pending,
             "current_job_id": self.current_job.job_id if self.current_job else None,
             "emergency": self.emergency_flag.exists(), "ts": time.time(),
         })
@@ -150,14 +171,8 @@ class AgentService:
             else:
                 log.info("Comando obsoleto descartado: %s (%.0fs)", cmd["command"], age)
         self.recovery.recover_on_startup()
-        if self.workflow is None:
-            try:
-                self.workflow = load_workflow(self.settings.workflow_id)
-            except (WorkflowNotReady, ValueError) as exc:
-                self.db.add_event("ERROR", "workflow", f"Flujo no disponible: {exc}")
-                raise
-        await self._refresh_remote_config()
-        check_mode_allowed(self.workflow, self.settings.automation_mode.value, self.production_authorized)
+        self._load_workflows()
+        await self.send_heartbeat()
         if self.emergency_flag.exists():
             self.set_state(AgentState.EMERGENCY_STOP, "bandera de emergencia presente")
         elif self.state == AgentState.AUTH_ERROR:
@@ -166,16 +181,27 @@ class AgentService:
             self.set_state(AgentState.RUNNING if self.desired_running else AgentState.PAUSED)
         self.publish_status()
 
-    async def _refresh_remote_config(self) -> None:
+    def _load_workflows(self) -> None:
+        mode = self.settings.automation_mode
         try:
-            config = await self.api.get_config()
-            self.production_authorized = bool(config.get("production_authorized", False))
-            self._api_ok()
-        except AuthError as exc:
-            self.health.api_error = str(exc)
-            self.set_state(AgentState.AUTH_ERROR, str(exc))
-        except ApiError as exc:
-            self._api_fail(exc)
+            self.sim_workflow = load_workflow(self.settings.simulation_workflow_id)
+            if not self.sim_workflow.simulation:
+                raise WorkflowNotReady(f"{self.sim_workflow.id} no es un flujo de simulación")
+            if self.workflow is None:
+                self.workflow = load_workflow(self.settings.workflow_id)
+            if mode == AutomationMode.SIMULATION and not self.workflow.simulation:
+                raise WorkflowNotReady("El modo SIMULACIÓN solo puede usar flujos de simulación")
+            if mode == AutomationMode.AUTHORIZED_PRODUCTION:
+                # La parte del servidor (mode=production) se comprueba por tarea.
+                check_mode_allowed(self.workflow, mode.value, backend_production_authorized=True)
+        except (WorkflowNotReady, ValueError) as exc:
+            self.db.add_event("ERROR", "workflow", f"Flujo no disponible: {exc}")
+            raise
+
+    @property
+    def real_workflow(self) -> WorkflowDef | None:
+        """Flujo para tareas NO simuladas (nunca un flujo de simulación)."""
+        return self.workflow if self.workflow is not None and not self.workflow.simulation else None
 
     def _api_ok(self) -> None:
         self.health.api_online, self.health.api_last_ok, self.health.api_error = True, time.time(), None
@@ -191,7 +217,7 @@ class AgentService:
         for name, fn in loops.items():
             self._tasks[name] = asyncio.create_task(fn(), name=name)
         await self.stopping.wait()
-        # Detención ordenada: el trabajo en curso termina su fase segura.
+        # Detención ordenada: la tarea en curso termina su fase segura.
         work = self._tasks.get("work")
         if work and not work.done():
             try:
@@ -199,12 +225,14 @@ class AgentService:
             except asyncio.TimeoutError:
                 work.cancel()
         try:
-            await asyncio.wait_for(self.sync.flush(), 15)
+            await asyncio.wait_for(self.sync.flush_all(), 15)
         except Exception:
             pass
         for task in self._tasks.values():
             task.cancel()
         await asyncio.gather(*self._tasks.values(), return_exceptions=True)
+        if self.settings.close_emulator_on_stop and self.bluestacks is not None and self.recovery.restart_is_safe():
+            self.bluestacks.stop()
         self.set_state(AgentState.STOPPED)
         self.publish_status()
         await self.api.aclose()
@@ -246,9 +274,8 @@ class AgentService:
             self.emergency_flag.write_text(f"{iso_now()} {issued_by}", encoding="utf-8")
             self.desired_running = False
             self.set_state(AgentState.EMERGENCY_STOP, f"por {issued_by}")
-            self.db.enqueue("alert", f"alert:emergency:{int(time.time())}", {
-                "severity": "critical", "code": "EMERGENCY_STOP", "message": f"Parada de emergencia por {issued_by}",
-                "at": iso_now()})
+            self.db.add_alert(f"emergency:{time.time()}", "CRITICAL", "EMERGENCY_STOP",
+                              f"Parada de emergencia por {issued_by}")
         elif command == "clear_emergency":
             if self.emergency_flag.exists():
                 self.emergency_flag.unlink()
@@ -257,39 +284,39 @@ class AgentService:
             log.warning("Comando desconocido ignorado: %s", command)
 
     async def heartbeat_loop(self) -> None:
-        seq = 0
         while not self.stopping.is_set():
             self.touch("heartbeat")
-            seq += 1
-            await self.send_heartbeat(seq)
+            await self.send_heartbeat()
             await asyncio.sleep(self.settings.heartbeat_interval_seconds)
 
-    async def send_heartbeat(self, seq: int = 0) -> None:
-        usage = self.db.usage_today()
-        payload = {
-            "agent_version": __version__, "state": self.state.value, "mode": self.settings.automation_mode.value,
-            "current_job_id": self.current_job.job_id if self.current_job else None, "sequence": seq,
-            "emulator": {"device_ok": self.health.device_ok, "running": self.health.emulator_running},
-            "usage_today": {"requests": usage.get("requests"), "total_tokens": usage.get("total_tokens"),
-                            "cost_usd": round(float(usage.get("cost_usd") or 0), 6)},
-            "outbox_pending": self.db.outbox_pending_count(), "sent_at": iso_now(),
-        }
+    async def send_heartbeat(self) -> None:
         try:
-            response = await self.api.heartbeat(payload)
+            await self.api.heartbeat()
             self._api_ok()
+            self.health.server_checked_at = time.monotonic()
             if self.state == AgentState.AUTH_ERROR:
-                self.set_state(AgentState.PAUSED, "credenciales válidas de nuevo")
-            requested = (response or {}).get("requested_state")
-            # El backend solo puede pausar o reanudar: nunca ejecutar comandos en la PC.
-            if requested == "paused" and self.state == AgentState.RUNNING:
-                self.handle_command("pause", "backend")
-            elif requested == "running" and self.state == AgentState.PAUSED and not self.emergency_flag.exists():
-                self.handle_command("resume", "backend")
+                self.set_state(AgentState.PAUSED if not self.desired_running else AgentState.RUNNING,
+                               "credenciales válidas de nuevo")
+            await self._reconcile_once()
         except AuthError as exc:
             self.health.api_error = str(exc)
             self.set_state(AgentState.AUTH_ERROR, "token inválido, expirado o revocado")
         except ApiError as exc:
             self._api_fail(exc)
+
+    async def _reconcile_once(self) -> None:
+        """Tras arrancar, compara las tareas que el servidor nos atribuye con el estado local."""
+        if self.reconciled or self.current_job is not None:
+            return
+        try:
+            tasks = await self.api.current_tasks()
+        except ApiError as exc:
+            log.warning("No se pudo consultar /agent/tasks/current: %s", exc)
+            return
+        self.reconciled = True
+        actions = self.recovery.reconcile_with_server(tasks)
+        if actions:
+            log.warning("Reconciliación con el servidor", extra={"actions": actions})
 
     async def sync_loop(self) -> None:
         while not self.stopping.is_set():
@@ -320,6 +347,10 @@ class AgentService:
             self.device = None
             return None
 
+    def poll_interval(self) -> float:
+        suggested = self.api.state.poll_after_seconds or 0
+        return max(self.settings.poll_interval_seconds, float(suggested))
+
     async def work_loop(self) -> None:
         while not self.stopping.is_set():
             self.touch("work")
@@ -337,10 +368,40 @@ class AgentService:
                 continue
             processed = await self.work_once()
             if not processed:
-                await asyncio.sleep(self.settings.poll_interval_seconds)
+                await asyncio.sleep(self.poll_interval())
+
+    def can_claim(self) -> tuple[bool, str]:
+        """Solo se reclama si el servidor reparte tareas y su modo es compatible con el modo local."""
+        srv = self.api.state
+        if srv.mode in (None, "off"):
+            return False, "automatización apagada en DiamantesExpress (modo off)"
+        if srv.paused:
+            return False, "pausado desde DiamantesExpress"
+        if not srv.accepted:
+            return False, "el servidor no acepta trabajo de este agente"
+        allowed = COMPATIBLE_SERVER_MODES[self.settings.automation_mode]
+        if srv.mode not in allowed:
+            return False, f"modo del servidor '{srv.mode}' no permitido por el modo local {self.settings.automation_mode.value}"
+        if srv.mode != "simulation" and self.real_workflow is None:
+            return False, (f"el servidor está en '{srv.mode}' pero no hay un flujo real validado "
+                           "(solo se ejecutan tareas simuladas)")
+        return True, ""
 
     async def work_once(self) -> bool:
-        """Un ciclo: verificar entorno, reclamar un trabajo y ejecutarlo. Devuelve True si procesó uno."""
+        """Un ciclo: verificar entorno, reclamar una tarea y ejecutarla. Devuelve True si procesó una."""
+        stale = (self.health.server_checked_at is None
+                 or time.monotonic() - self.health.server_checked_at > self.settings.heartbeat_interval_seconds * 2)
+        if stale:
+            await self.send_heartbeat()
+            if self.state == AgentState.AUTH_ERROR:
+                return False
+        ok, reason = self.can_claim()
+        if not ok:
+            if self.health.api_online:
+                self.set_state(AgentState.SERVER_HOLD, reason)
+            else:
+                self.set_state(AgentState.DEGRADED, "API no disponible")
+            return False
         device = await self.ensure_device()
         if device is None:
             self.set_state(AgentState.DEGRADED, "emulador no disponible")
@@ -358,32 +419,66 @@ class AgentService:
         except ApiError as exc:
             self._api_fail(exc)
             return False
-        if self.state in (AgentState.DEGRADED, AgentState.BUDGET_EXHAUSTED, AgentState.STARTING):
+        if job is None and self.api.state.last_reason == "spend_limit_reached":
+            self.set_state(AgentState.BUDGET_EXHAUSTED, "límite de gasto alcanzado en DiamantesExpress")
+            return False
+        if self.state in (AgentState.DEGRADED, AgentState.BUDGET_EXHAUSTED, AgentState.STARTING,
+                          AgentState.SERVER_HOLD):
             self.set_state(AgentState.RUNNING)
         if job is None:
             return False
         await self.process_job(job, device)
         return True
 
+    def plan_for(self, job: Job) -> tuple[WorkflowDef | None, str, str]:
+        """Elige flujo y modo efectivo para una tarea. Devuelve (flujo, modo, motivo_si_no_se_puede)."""
+        local = self.settings.automation_mode
+        if job.simulated:
+            mode = "SUPERVISED" if local == AutomationMode.SUPERVISED else "SIMULATION"
+            return self.sim_workflow, mode, ""
+        wf = self.real_workflow
+        if wf is None:
+            return None, "", "tarea real sin flujo real validado"
+        if job.server_mode == "supervised":
+            return wf, "SUPERVISED", ""
+        if job.server_mode == "production":
+            if local == AutomationMode.AUTHORIZED_PRODUCTION:
+                try:
+                    check_mode_allowed(wf, "AUTHORIZED_PRODUCTION", backend_production_authorized=True)
+                    return wf, "AUTHORIZED_PRODUCTION", ""
+                except WorkflowNotReady as exc:
+                    return None, "", str(exc)
+            # El modo local es más restrictivo: se exige aprobación humana.
+            return wf, "SUPERVISED", ""
+        return None, "", f"modo de tarea no soportado: {job.server_mode}"
+
     async def process_job(self, job: Job, device: DeviceController) -> JobOutcome:
-        assert self.workflow is not None
         self.current_job = job
+        workflow, mode, problem = self.plan_for(job)
+        if workflow is None:
+            outcome = JobOutcome(job_id=job.job_id, order_id=job.order_id, status=JobStatus.RELEASED,
+                                 error_code="MODE_MISMATCH", message=f"No se ejecuta: {problem}")
+            self.queue.finish(job, outcome)
+            self.db.add_alert(f"mode_mismatch:{job.job_id}", "WARNING", "MODE_MISMATCH", f"{job.order_id}: {problem}")
+            self.current_job = None
+            return outcome
         s = self.settings
         cfg = EngineConfig(
-            mode=s.automation_mode.value, agent_id=self.api.agent_id, max_actions=s.max_actions_per_order,
+            mode=mode, agent_id=self.api.agent_id, max_actions=s.max_actions_per_order,
             max_duration_s=s.max_order_duration_seconds, max_step_retries=s.max_step_retries,
             max_consecutive_errors=s.max_consecutive_errors, screen_wait_timeout_s=s.screen_wait_timeout_seconds,
             approval_timeout_s=s.approval_timeout_seconds, min_confidence=s.ai_min_confidence,
             verify_result_with_ai=s.verify_result_with_ai)
         for key, value in self.engine_overrides.items():
             setattr(cfg, key, value)
-        engine = WorkflowEngine(db=self.db, device=device, workflow=self.workflow, config=cfg,
+        engine = WorkflowEngine(db=self.db, device=device, workflow=workflow, config=cfg,
                                 approvals=self.approvals, evidence=self.evidence, vision=self.vision,
                                 verify_job_still_assigned=self._job_still_assigned,
                                 emergency_flag=self.emergency_flag, live_screenshot=self.live_screenshot)
+        keeper = asyncio.create_task(self._keep_lease(job))
         try:
             outcome = await engine.run(job)
-        except Exception as exc:  # defensa final: nunca perder el estado de un trabajo
+        except Exception as exc:  # defensa final: nunca perder el estado de una tarea
             log.exception("Error inesperado procesando %s", job.job_id)
             row = self.db.get_job(job.job_id) or {}
             doubt = self.recovery.commit_in_doubt(job.job_id) or row.get("status") in (
@@ -391,17 +486,44 @@ class AgentService:
             outcome = JobOutcome(job_id=job.job_id, order_id=job.order_id,
                                  status=JobStatus.NEEDS_REVIEW if doubt else JobStatus.RELEASED,
                                  error_code="INTERNAL_ERROR", message=str(exc), pre_commit=not doubt)
-        self.queue.finish(job, outcome)
-        if outcome.status in (JobStatus.NEEDS_REVIEW,) or outcome.error_code in ("SCREEN_UNRECOGNIZED",):
-            self.db.enqueue("alert", f"alert:{outcome.error_code}:{job.job_id}:{int(time.time())}", {
-                "severity": "critical" if outcome.status == JobStatus.NEEDS_REVIEW else "warning",
-                "code": outcome.error_code or "NEEDS_REVIEW", "message": f"{job.order_id}: {outcome.message}",
-                "at": iso_now()})
+        finally:
+            keeper.cancel()
+            await asyncio.gather(keeper, return_exceptions=True)
+        self.queue.finish(job, outcome, workflow.id, mode)
+        if outcome.status == JobStatus.NEEDS_REVIEW or outcome.error_code == "SCREEN_UNRECOGNIZED":
+            self.db.add_alert(f"{outcome.error_code}:{job.job_id}:{job.attempt}",
+                              "CRITICAL" if outcome.status == JobStatus.NEEDS_REVIEW else "WARNING",
+                              outcome.error_code or "NEEDS_REVIEW", f"{job.order_id}: {outcome.message}", job.job_id)
+        self.lease_lost.discard(job.job_id)
         self.current_job = None
         self.db.set_status("current_job", None)
         return outcome
 
-    async def _job_still_assigned(self, job_id: str) -> bool:
-        state = await self.api.get_job(job_id)
-        return state.get("status") == "claimed" and state.get("claimed_by") in (None, self.api.agent_id)
+    async def _keep_lease(self, job: Job) -> None:
+        """Renueva el lease (POST progress) mientras la tarea siga abierta, p. ej. esperando aprobación."""
+        interval = max(5.0, min(60.0, self.api.state.lease_seconds / 3))
+        while True:
+            await asyncio.sleep(interval)
+            row = self.db.get_job(job.job_id) or {}
+            status = "verifying" if row.get("status") == JobStatus.VERIFYING.value else "processing"
+            try:
+                await self.api.report_progress(job.job_id, status, f"Agente activo ({row.get('status')})",
+                                               {"step": "lease_keepalive", "simulated": job.simulated})
+            except (ConflictError, NotFoundError):
+                self.lease_lost.add(job.job_id)
+                self.db.add_alert(f"lease_lost:{job.job_id}", "CRITICAL", "LEASE_LOST",
+                                  f"{job.order_id}: el servidor ya no asigna esta tarea a este agente", job.job_id)
+                return
+            except ApiError as exc:
+                log.warning("No se pudo renovar el lease de %s: %s", job.job_id, exc)
 
+    async def _job_still_assigned(self, job_id: str) -> bool:
+        """Antes del paso de entrega: confirma propiedad y renueva el lease con una llamada en vivo."""
+        if job_id in self.lease_lost:
+            return False
+        try:
+            await self.api.report_progress(job_id, "processing", "Verificación de propiedad antes de la entrega",
+                                           {"step": "pre_commit_check"})
+            return True
+        except (ConflictError, NotFoundError):
+            return False

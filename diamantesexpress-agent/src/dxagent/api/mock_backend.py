@@ -1,8 +1,15 @@
-"""Backend simulado de DiamantesExpress que implementa el contrato provisional.
+"""Backend simulado que imita la API REAL de DiamantesExpress (`/hcgi/api/agent/...`).
 
-Se usa en pruebas automatizadas (httpx.MockTransport), en el modo de simulación integral
-y como servidor local (`dxagent mock-backend`) para probar la aplicación sin Horizons.
-Permite inyectar fallos: API caída, token revocado, errores 5xx.
+Reproduce el comportamiento documentado por Horizons:
+- modos off | simulation | supervised | production y pausa;
+- claim atómico con lease; al vencer el lease la tarea vuelve a pending hasta maxAttempts y
+  luego pasa a manual_review;
+- progress solo para el agente propietario (409 task_owned_by_other_agent / task_already_finished);
+- result idempotente (duplicate:true); uncertain -> manual_review; en supervised, completed -> manual_review;
+- coste estimado con tarifas configurables cuando no se envía cost_usd.
+
+Se usa en pruebas (httpx.MockTransport), en `dxagent simulate` y como servidor local (`dxagent mock-backend`).
+No crea pedidos ni cobros reales.
 """
 
 from __future__ import annotations
@@ -17,188 +24,206 @@ from typing import Any, Callable
 import httpx
 
 ROUTES: list[tuple[str, str, str]] = [
-    ("POST", r"/agents/pair", "pair"),
-    ("POST", r"/agents/(?P<agent_id>[^/]+)/heartbeat", "heartbeat"),
-    ("GET", r"/agents/(?P<agent_id>[^/]+)/config", "config"),
-    ("GET", r"/agents/(?P<agent_id>[^/]+)/jobs", "jobs"),
-    ("POST", r"/agents/(?P<agent_id>[^/]+)/alerts", "alert"),
-    ("GET", r"/jobs/(?P<job_id>[^/]+)", "get_job"),
-    ("POST", r"/jobs/(?P<job_id>[^/]+)/claim", "claim"),
-    ("POST", r"/jobs/(?P<job_id>[^/]+)/progress", "progress"),
-    ("POST", r"/jobs/(?P<job_id>[^/]+)/evidence", "evidence"),
-    ("POST", r"/jobs/(?P<job_id>[^/]+)/complete", "complete"),
-    ("POST", r"/jobs/(?P<job_id>[^/]+)/release", "release"),
-    ("POST", r"/usage", "usage"),
+    ("POST", r"/agent/heartbeat", "heartbeat"),
+    ("POST", r"/agent/tasks/claim", "claim"),
+    ("GET", r"/agent/tasks/current", "current"),
+    ("POST", r"/agent/tasks/(?P<task_id>[^/]+)/progress", "progress"),
+    ("POST", r"/agent/tasks/(?P<task_id>[^/]+)/result", "result"),
 ]
+FINAL = {"completed", "failed", "manual_review", "cancelled"}
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class MockHorizonsBackend:
-    def __init__(self, agent_id: str = "agent-test", token: str = "test-token-123456",
-                 pairing_code: str = "PAIR-0001", production_authorized: bool = False):
+    def __init__(self, token: str = "dxa_test_token_123456", mode: str = "simulation", agent_name: str = "agente-1"):
         self.lock = threading.RLock()
-        self.agent_id = agent_id
-        self.tokens = {token: agent_id}
-        self.pairing_codes = {pairing_code}
-        self.production_authorized = production_authorized
-        self.jobs: dict[str, dict[str, Any]] = {}
-        self.idempotency: dict[str, tuple[int, Any]] = {}
-        self.usage_records: dict[str, dict] = {}
-        self.usage_posts = 0
+        self.tokens = {token: agent_name}
+        self.mode = mode
+        self.paused = False
+        self.booyah_agent = True
+        self.lease_seconds = 300
+        self.max_attempts = 3
+        self.poll_after_seconds = 0
+        self.spend_limit_reached = False
+        self.price_in, self.price_out, self.price_cache = 0.15, 0.60, 0.075  # por 1M (tarifas de prueba)
+        self.tasks: dict[str, dict[str, Any]] = {}
+        self.order: list[str] = []
         self.heartbeats: dict[str, dict] = {}
         self.heartbeat_count = 0
         self.progress: list[dict] = []
-        self.evidence: list[dict] = []
-        self.completions: dict[str, dict] = {}
-        self.releases: dict[str, dict] = {}
-        self.alerts: list[dict] = []
+        self.results: dict[str, dict] = {}
+        self.result_posts = 0
         self.down = False
         self.fail_statuses: list[int] = []
+        self.clock: Callable[[], datetime] = _now
         self.on_request: Callable[[str, str], None] | None = None
 
     # ------------------------------------------------------------- utilidades
-    def add_job(self, job_id: str | None = None, order_id: str | None = None, player_id: str = "123456789",
-                product_code: str = "DIAMANTES_100", product_name: str = "100 Diamantes", **extra: Any) -> dict:
-        job_id = job_id or f"job-{uuid.uuid4().hex[:10]}"
-        job = {
-            "job_id": job_id, "order_id": order_id or f"DX-{job_id[-6:]}", "type": "gift_delivery",
-            "recipient": {"player_id": player_id}, "product": {"code": product_code, "name": product_name, "quantity": 1},
-            "created_at": datetime.now(timezone.utc).isoformat(), "attempt": 1, "status": "pending", "claimed_by": None,
+    def add_task(self, task_id: str | None = None, order_code: str | None = None, player_id: str = "588141749",
+                 kind: str = "pase_booyah", product_name: str = "Pase Booyah", simulated: bool | None = None,
+                 **extra: Any) -> dict:
+        task_id = task_id or f"task_{uuid.uuid4().hex[:10]}"
+        sim = self.mode == "simulation" if simulated is None else simulated
+        task = {
+            "id": task_id, "orderId": "" if sim else f"ord_{task_id}", "orderCode": order_code or f"DX-{task_id[-6:]}",
+            "productName": product_name, "kind": kind, "playerId": player_id, "playerZone": "",
+            "status": "pending", "mode": self.mode, "simulated": sim, "attempts": 0,
+            "maxAttempts": self.max_attempts, "leaseExpiresAt": None, "claimedAt": None, "owner": None,
+            "evidence": None, "result": None, "errorCode": None, "errorMessage": None, "usage": None,
+            "createdAt": self.clock().isoformat(), "updatedAt": self.clock().isoformat(),
         }
-        job.update(extra)
+        task.update(extra)
         with self.lock:
-            self.jobs[job_id] = job
-        return job
+            self.tasks[task_id] = task
+            self.order.append(task_id)
+        return task
+
+    def add_job(self, job_id: str | None = None, order_id: str | None = None, player_id: str = "588141749",
+                product_code: str = "pase_booyah", product_name: str = "Pase Booyah", **extra: Any) -> dict:
+        """Atajo de pruebas con nombres de pedido (job_id/order_id/product_code)."""
+        return self.add_task(task_id=job_id, order_code=order_id, player_id=player_id, kind=product_code,
+                             product_name=product_name, **extra)
 
     def revoke(self, token: str) -> None:
         with self.lock:
             self.tokens.pop(token, None)
 
-    def public_job(self, job: dict) -> dict:
-        return {k: v for k, v in job.items() if k not in {"status", "claimed_by"}}
+    def expire_leases(self) -> None:
+        """Aplica el vencimiento de leases como lo hace Horizons."""
+        now = self.clock()
+        for t in self.tasks.values():
+            if t["status"] in ("processing", "verifying") and t["leaseExpiresAt"] \
+                    and datetime.fromisoformat(t["leaseExpiresAt"]) <= now:
+                t["owner"] = None
+                t["status"] = "manual_review" if t["attempts"] >= t["maxAttempts"] else "pending"
+
+    def admin_retry(self, task_id: str) -> None:
+        t = self.tasks[task_id]
+        if t["status"] == "completed":
+            raise ValueError("already_completed")
+        t.update(status="pending", owner=None, result=None)
+
+    @staticmethod
+    def public(task: dict) -> dict:
+        return {k: v for k, v in task.items() if k != "owner"}
 
     # ---------------------------------------------------------------- handler
-    def handle(self, method: str, path: str, headers: dict[str, str], body: bytes,
-               content_type: str = "", query: dict[str, str] | None = None) -> tuple[int, Any]:
+    def handle(self, method: str, path: str, headers: dict[str, str], body: bytes) -> tuple[int, Any]:
         with self.lock:
             if self.on_request:
                 self.on_request(method, path)
             if self.fail_statuses:
                 return self.fail_statuses.pop(0), {"error": "fallo inyectado"}
             for route_method, pattern, name in ROUTES:
-                if route_method != method:
-                    continue
-                match = re.search(pattern + r"$", path)
+                match = re.search(pattern + r"$", path) if route_method == method else None
                 if match:
                     break
             else:
-                return 404, {"error": f"ruta no encontrada: {method} {path}"}
-            if name != "pair":
-                auth = headers.get("authorization", "")
-                token = auth[7:] if auth.lower().startswith("bearer ") else ""
-                if token not in self.tokens:
-                    return 401, {"error": "token inválido o revocado"}
-                agent = self.tokens[token]
-            else:
-                agent = None
-            idem = headers.get("idempotency-key")
-            if idem and idem in self.idempotency:
-                return self.idempotency[idem]
-            payload: Any = {}
-            if body and "application/json" in content_type:
-                payload = json.loads(body)
-            elif body and "multipart/form-data" in content_type:
-                payload = {"multipart_bytes": len(body)}
-            result = getattr(self, f"_op_{name}")(agent, payload, query or {}, **match.groupdict())
-            if idem and result[0] < 500:
-                self.idempotency[idem] = result
-            return result
+                return 404, {"error": "not_found"}
+            auth = headers.get("authorization", "")
+            token = auth[7:] if auth.lower().startswith("bearer ") else headers.get("x-agent-token", "")
+            if not token:
+                return 401, {"error": "missing_agent_token"}
+            if token not in self.tokens:
+                return 401, {"error": "invalid_agent_token"}
+            agent = self.tokens[token]
+            payload = json.loads(body) if body else {}
+            self.expire_leases()
+            return getattr(self, f"_op_{name}")(agent, payload, **match.groupdict())
 
     # ------------------------------------------------------------- operaciones
-    def _op_pair(self, _agent, payload, _q):
-        if payload.get("pairing_code") not in self.pairing_codes:
-            return 401, {"error": "código inválido"}
-        self.pairing_codes.discard(payload["pairing_code"])
-        token = f"tok-{uuid.uuid4().hex}"
-        self.tokens[token] = self.agent_id
-        return 200, {"agent_id": self.agent_id, "agent_token": token}
-
-    def _op_heartbeat(self, agent, payload, _q, agent_id):
+    def _op_heartbeat(self, agent, payload):
         self.heartbeat_count += 1
-        self.heartbeats[agent_id] = payload  # upsert: los heartbeats repetidos no duplican estado
-        return 200, {"server_time": datetime.now(timezone.utc).isoformat()}
+        self.heartbeats[agent] = payload  # upsert: los heartbeats repetidos no duplican estado
+        return 200, {"ok": True, "serverTime": self.clock().isoformat(), "mode": self.mode, "paused": self.paused,
+                     "accepted": self.mode != "off" and not self.paused, "booyahAgent": self.booyah_agent,
+                     "leaseSeconds": self.lease_seconds, "maxAttempts": self.max_attempts,
+                     "pollAfterSeconds": self.poll_after_seconds}
 
-    def _op_config(self, agent, _p, _q, agent_id):
-        return 200, {"production_authorized": self.production_authorized}
+    def _op_claim(self, agent, _payload):
+        base = {"mode": None if self.mode == "off" else self.mode, "simulate": self.mode == "simulation",
+                "leaseSeconds": self.lease_seconds, "limit": None, "instructions": []}
+        if self.mode == "off":
+            return 200, {**base, "task": None, "reason": "automation_off"}
+        if self.paused:
+            return 200, {**base, "task": None, "reason": "paused"}
+        if self.spend_limit_reached:
+            return 200, {**base, "task": None, "reason": "spend_limit_reached"}
+        for task_id in self.order:
+            t = self.tasks[task_id]
+            if t["status"] == "pending":
+                now = self.clock()
+                t.update(status="processing", owner=agent, attempts=t["attempts"] + 1, claimedAt=now.isoformat(),
+                         leaseExpiresAt=(now + timedelta(seconds=self.lease_seconds)).isoformat(),
+                         mode=self.mode, updatedAt=now.isoformat())
+                if self.mode == "simulation":
+                    t["simulated"] = True
+                    base["instructions"] = ["MODO SIMULACIÓN: no ejecutes ninguna acción real en el juego."]
+                return 200, {**base, "task": self.public(t), "reason": None}
+        return 200, {**base, "task": None, "reason": "empty"}
 
-    def _op_jobs(self, agent, _p, query, agent_id):
-        limit = int(query.get("limit", 5))
-        pending = [self.public_job(j) for j in self.jobs.values() if j["status"] == "pending"][:limit]
-        return 200, {"jobs": pending}
+    def _op_current(self, agent, _payload):
+        mine = [self.public(t) for t in self.tasks.values()
+                if t["owner"] == agent and t["status"] in ("processing", "verifying")]
+        return 200, {"tasks": mine}
 
-    def _op_get_job(self, agent, _p, _q, job_id):
-        job = self.jobs.get(job_id)
-        if not job:
-            return 404, {"error": "no existe"}
-        return 200, {"job_id": job_id, "status": job["status"], "claimed_by": job["claimed_by"]}
+    def _owned(self, agent, task_id):
+        t = self.tasks.get(task_id)
+        if not t:
+            return None, (404, {"error": "task_not_found"})
+        if t["owner"] not in (agent, None) or (t["owner"] is None and t["status"] not in FINAL):
+            return t, (409, {"error": "task_owned_by_other_agent"})
+        return t, None
 
-    def _op_claim(self, agent, _p, _q, job_id):
-        job = self.jobs.get(job_id)
-        if not job:
-            return 404, {"error": "no existe"}
-        if job["status"] != "pending":
-            return 409, {"error": "ya reclamado"}
-        job["status"], job["claimed_by"] = "claimed", agent
-        job["lease_expires_at"] = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
-        return 200, self.public_job(job)
-
-    def _owned(self, agent, job_id) -> tuple[int, Any] | None:
-        job = self.jobs.get(job_id)
-        if not job:
-            return 404, {"error": "no existe"}
-        if job["claimed_by"] != agent:
-            return 409, {"error": "el trabajo no pertenece a este agente"}
-        return None
-
-    def _op_progress(self, agent, payload, _q, job_id):
-        if err := self._owned(agent, job_id):
+    def _op_progress(self, agent, payload, task_id):
+        t, err = self._owned(agent, task_id)
+        if err:
             return err
-        self.progress.append({"job_id": job_id, **payload})
-        return 200, {"ok": True}
+        if t["status"] in FINAL:
+            return 409, {"error": "task_already_finished"}
+        status = payload.get("status")
+        if status in ("processing", "verifying"):
+            t["status"] = status
+        if payload.get("evidence") is not None:
+            t["evidence"] = payload["evidence"]
+        t["leaseExpiresAt"] = (self.clock() + timedelta(seconds=self.lease_seconds)).isoformat()
+        self.progress.append({"task_id": task_id, **payload})
+        return 200, {"ok": True, "task": self.public(t)}
 
-    def _op_evidence(self, agent, payload, _q, job_id):
-        if err := self._owned(agent, job_id):
+    def _op_result(self, agent, payload, task_id):
+        self.result_posts += 1
+        t, err = self._owned(agent, task_id)
+        if err:
             return err
-        self.evidence.append({"job_id": job_id, **payload})
-        return 200, {"ok": True}
-
-    def _op_complete(self, agent, payload, _q, job_id):
-        if err := self._owned(agent, job_id):
-            return err
-        self.completions[job_id] = payload
-        self.jobs[job_id]["status"] = payload.get("status", "completed")
-        return 200, {"ok": True}
-
-    def _op_release(self, agent, payload, _q, job_id):
-        if err := self._owned(agent, job_id):
-            return err
-        self.releases[job_id] = payload
-        self.jobs[job_id].update(status="pending", claimed_by=None)
-        return 200, {"ok": True}
-
-    def _op_alert(self, agent, payload, _q, agent_id):
-        self.alerts.append(payload)
-        return 200, {"ok": True}
-
-    def _op_usage(self, agent, payload, _q):
-        self.usage_posts += 1
-        accepted = duplicates = 0
-        for record in payload.get("records", []):
-            if record["record_id"] in self.usage_records:
-                duplicates += 1
-            else:
-                self.usage_records[record["record_id"]] = record
-                accepted += 1
-        return 200, {"accepted": accepted, "duplicates": duplicates}
+        if t["result"] is not None:
+            return 200, {"ok": True, "duplicate": True, "task": self.public(t)}
+        outcome = payload.get("outcome")
+        if outcome not in ("completed", "failed", "uncertain"):
+            return 422, {"error": "invalid_outcome"}
+        usage = payload.get("usage") or {}
+        cost = float(usage.get("cost_usd") or 0)
+        if usage and cost <= 0:
+            prompt, cached = int(usage.get("prompt_tokens") or 0), int(usage.get("cached_tokens") or 0)
+            cost = ((prompt - cached) * self.price_in + cached * self.price_cache
+                    + int(usage.get("completion_tokens") or 0) * self.price_out) / 1e6
+        if usage:
+            t["usage"] = {"model": usage.get("model"), "promptTokens": usage.get("prompt_tokens", 0),
+                          "completionTokens": usage.get("completion_tokens", 0),
+                          "cachedTokens": usage.get("cached_tokens", 0), "costUsd": round(cost, 8)}
+        t["result"] = {"outcome": outcome, "simulated": t["simulated"], "giftCode": payload.get("giftCode", ""),
+                       "message": payload.get("message", ""), "reportedAt": self.clock().isoformat()}
+        t["evidence"] = payload.get("evidence", t["evidence"])
+        t["errorCode"], t["errorMessage"] = payload.get("errorCode"), payload.get("errorMessage")
+        if outcome == "uncertain" or (outcome == "completed" and t["mode"] == "supervised"):
+            t["status"] = "manual_review"
+        else:
+            t["status"] = outcome
+        t["owner"] = agent
+        self.results[task_id] = payload
+        return 200, {"ok": True, "duplicate": False, "task": self.public(t)}
 
     # -------------------------------------------------------------- adaptadores
     def transport(self) -> httpx.MockTransport:
@@ -206,26 +231,22 @@ class MockHorizonsBackend:
             if self.down:
                 raise httpx.ConnectError("API simulada fuera de línea", request=request)
             status, body = self.handle(request.method, request.url.path,
-                                       {k.lower(): v for k, v in request.headers.items()},
-                                       request.read(), request.headers.get("content-type", ""),
-                                       dict(request.url.params))
+                                       {k.lower(): v for k, v in request.headers.items()}, request.read())
             return httpx.Response(status, json=body)
         return httpx.MockTransport(handler)
 
     def serve(self, host: str = "127.0.0.1", port: int = 8787):  # pragma: no cover - manual
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-        from urllib.parse import parse_qsl, urlsplit
+        from urllib.parse import urlsplit
 
         backend = self
 
         class Handler(BaseHTTPRequestHandler):
             def _dispatch(self):
-                parts = urlsplit(self.path)
                 length = int(self.headers.get("content-length") or 0)
                 body = self.rfile.read(length) if length else b""
-                status, payload = backend.handle(self.command, parts.path,
-                                                 {k.lower(): v for k, v in self.headers.items()}, body,
-                                                 self.headers.get("content-type", ""), dict(parse_qsl(parts.query)))
+                status, payload = backend.handle(self.command, urlsplit(self.path).path,
+                                                 {k.lower(): v for k, v in self.headers.items()}, body)
                 data = json.dumps(payload).encode()
                 self.send_response(status)
                 self.send_header("content-type", "application/json")
@@ -238,5 +259,4 @@ class MockHorizonsBackend:
             def log_message(self, *args):
                 pass
 
-        server = ThreadingHTTPServer((host, port), Handler)
-        return server
+        return ThreadingHTTPServer((host, port), Handler)

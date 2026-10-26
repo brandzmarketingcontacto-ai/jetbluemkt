@@ -9,7 +9,7 @@ from typing import Any
 
 from dxagent.ai.pricing import PricingTable
 from dxagent.database import LocalDatabase, _local_day_bounds_utc
-from dxagent.models import UsageRecord, iso_now
+from dxagent.models import ApiUsage, UsageRecord, iso_now
 
 log = logging.getLogger(__name__)
 
@@ -75,9 +75,29 @@ class UsageTracker:
             reasoning_tokens=reasoning, total_tokens=total, latency_ms=latency_ms, cost_usd=cost,
             status=status, error=error, purpose=purpose,
         )
+        # Se guarda localmente; el total por tarea viaja en el bloque `usage` de /agent/tasks/{id}/result.
         self.db.insert_usage(record)
-        # La clave de idempotencia es el record_id: una reconexión nunca duplica el consumo.
-        self.db.enqueue("usage", f"usage:{record.record_id}", record.model_dump(), job_id)
         log.info("Uso OpenAI registrado", extra={"model": model, "total_tokens": total, "cost_usd": cost,
                                                   "job_id": job_id, "status": status})
         return record
+
+
+def usage_for_result(db: LocalDatabase, job_id: str, default_model: str) -> ApiUsage | None:
+    """Suma el uso REAL de OpenAI de una tarea en el formato `Usage` de Horizons.
+
+    prompt_tokens incluye los tokens en caché (la API de OpenAI los cuenta dentro de input_tokens);
+    Horizons los descuenta de la entrada facturable. Se envía cost_usd calculado con pricing.yaml.
+    """
+    records = db.usage_for_job(job_id)
+    if not records:
+        return None
+    by_model: dict[str, int] = {}
+    for r in records:
+        by_model[r["model"]] = by_model.get(r["model"], 0) + int(r["total_tokens"] or 0)
+    return ApiUsage(
+        model=max(by_model, key=by_model.get) if by_model else default_model,
+        prompt_tokens=sum(int(r["input_tokens"] or 0) for r in records),
+        completion_tokens=sum(int(r["output_tokens"] or 0) for r in records),
+        cached_tokens=sum(int(r["cached_input_tokens"] or 0) for r in records),
+        cost_usd=round(sum(float(r["cost_usd"] or 0) for r in records), 8),
+    )

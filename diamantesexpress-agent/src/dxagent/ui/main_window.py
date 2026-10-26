@@ -191,7 +191,7 @@ class MainWindow(QMainWindow):
         lay.setSpacing(12)
         metrics = QGridLayout()
         metrics.setSpacing(12)
-        titles = ["Procesados hoy", "Pedidos pendientes", "Fallidos / revisión", "Tiempo promedio",
+        titles = ["Procesados hoy", "Modo del servidor", "Fallidos / revisión", "Tiempo promedio",
                   "Tokens IA hoy", "Costo IA hoy (USD)"]
         self.metrics = [MetricCard(t) for t in titles]
         for i, m in enumerate(self.metrics):
@@ -423,7 +423,9 @@ class MainWindow(QMainWindow):
                               COLORS["ok"] if agent.get("api_online") else COLORS["error"])
             self.pill_android.set("Disponible" if agent.get("device_ok") else "No disponible",
                                   COLORS["ok"] if agent.get("device_ok") else COLORS["warn"])
-            self.pill_mode.set(agent.get("mode", "—"), COLORS["accent"])
+            self.pill_mode.set(f"local {agent.get('mode', '—')}", COLORS["accent"])
+            if agent.get("state_reason"):
+                self.pill_agent.setToolTip(agent["state_reason"])
         else:
             for pill in (self.pill_api, self.pill_android):
                 pill.set("—", COLORS["muted"])
@@ -431,8 +433,11 @@ class MainWindow(QMainWindow):
         self.btn_start.setEnabled(state not in ("RUNNING", "EMERGENCY_STOP"))
 
         jt, ut = snap["jobs_today"], snap["usage_today"]
-        pending = agent.get("pending_jobs") if snap["service_alive"] else None
-        values = [jt["completed"], "—" if pending is None else (f"{pending}+" if pending >= 5 else pending), f"{jt['failed']} / {jt['needs_review']}",
+        server = (agent.get("server") or {}) if snap["service_alive"] else {}
+        server_txt = "—"
+        if server.get("mode"):
+            server_txt = server["mode"] + (" · pausa" if server.get("paused") else "")
+        values = [jt["completed"], server_txt, f"{jt['failed']} / {jt['needs_review']}",
                   fmt_duration(jt["avg_duration_s"]), f"{int(ut.get('total_tokens') or 0):,}",
                   f"{float(ut.get('cost_usd') or 0):.4f}"]
         for metric, value in zip(self.metrics, values):

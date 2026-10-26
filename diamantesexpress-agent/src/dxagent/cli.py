@@ -5,7 +5,7 @@
   dxagent doctor                  Diagnóstico del entorno (no consume tokens)
   dxagent simulate --orders 100   Simulación integral aislada (backend + Android ficticios)
   dxagent mock-backend            Backend DiamantesExpress simulado en localhost
-  dxagent pair --code CODIGO      Emparejar con DiamantesExpress
+  dxagent check-api               Heartbeat real contra DiamantesExpress (no reclama tareas)
   dxagent set-secret NOMBRE       Guardar token o clave OpenAI en el almacén seguro
   dxagent screenshot --out f.png  Captura real por ADB
   dxagent analyze-screen --image  Interpretar una captura con OpenAI (consume tokens)
@@ -51,6 +51,11 @@ def cmd_doctor(_args) -> int:
     except Exception as exc:
         report["contract"] = f"ERROR: {exc}"
     report["api_url"] = s.api_url or "NO CONFIGURADA"
+    if s.api_url and not s.api_url.rstrip("/").endswith("/hcgi/api"):
+        report["api_url_warning"] = "La URL de Horizons normalmente termina en /hcgi/api"
+    token = manager.secrets.get("agent_token") or ""
+    if token and not token.startswith("dxa_"):
+        report["agent_token_warning"] = "Los tokens de DiamantesExpress empiezan con dxa_"
     report["agent_token"] = "configurado" if manager.secrets.has("agent_token") else "falta"
     report["openai_api_key"] = "configurada" if manager.secrets.has("openai_api_key") else "falta"
     pricing = PricingTable.load(s.pricing_path or None)
@@ -66,6 +71,9 @@ def cmd_doctor(_args) -> int:
                                                  s.bluestacks_instance, s.adb_path, s.adb_serial).status()
     except Exception as exc:
         report["bluestacks"] = f"ERROR: {exc}"
+    from dxagent.audit import AuditLog
+    ok, count = AuditLog(paths.logs_dir() / "audit.jsonl").verify()
+    report["audit_log"] = {"integro": ok, "registros": count}
     _print(report)
     return 0
 
@@ -85,17 +93,17 @@ def cmd_simulate(args) -> int:
     from dxagent.settings import AgentSettings, AutomationMode, SecretStore
 
     setup_logging(paths.logs_dir(), "simulate", logging.WARNING)
-    backend = MockHorizonsBackend()
+    backend = MockHorizonsBackend(mode="simulation")
     for i in range(args.orders):
         code, name = SIM_PRODUCTS[i % len(SIM_PRODUCTS)]
-        backend.add_job(job_id=f"sim-{i:04d}", order_id=f"DX-SIM-{i:04d}", player_id=str(100000000 + i),
-                        product_code=code, product_name=name)
+        backend.add_task(task_id=f"sim_{i:04d}", order_code=f"DX-SIM-{i:04d}", player_id=str(100000000 + i),
+                         kind=code, product_name=name)
     device = MockDevice()
     db = LocalDatabase(paths.db_path())
-    settings = AgentSettings(api_url="https://mock.local/api/agent/v1", agent_id=backend.agent_id,
+    settings = AgentSettings(api_url="https://mock.local/hcgi/api", agent_name="simulador",
                              automation_mode=AutomationMode.SIMULATION, vision_backend="disabled",
                              poll_interval_seconds=0.01)
-    api = HorizonsApiClient(settings.api_url, backend.agent_id, "test-token-123456", ApiContract.load(),
+    api = HorizonsApiClient(settings.api_url, "dxa_test_token_123456", ApiContract.load(), agent_name="simulador",
                             transport=backend.transport())
 
     async def factory():
@@ -121,7 +129,9 @@ def cmd_simulate(args) -> int:
     result = {"directorio": str(home), "procesados": count, "segundos": round(elapsed, 2), **stats,
               "entregas_ficticias": len(device.transactions),
               "duplicados": len(device.transactions) - len({(t.player_id, t.product_code) for t in device.transactions}),
-              "reportados_al_backend": len(backend.completions), "outbox_pendiente": db.outbox_pending_count()}
+              "reportados_al_backend": len(backend.results),
+              "estados_en_servidor": {st: sum(1 for t in backend.tasks.values() if t["status"] == st)
+                                      for st in {t["status"] for t in backend.tasks.values()}}, "outbox_pendiente": db.outbox_pending_count()}
     _print(result)
     ok = stats["completed"] == args.orders and result["duplicados"] == 0 and result["outbox_pendiente"] == 0
     return 0 if ok else 1
@@ -131,13 +141,13 @@ def cmd_mock_backend(args) -> int:
     from dxagent.api.mock_backend import MockHorizonsBackend
     from dxagent.android.mock_device import SIM_PRODUCTS
 
-    backend = MockHorizonsBackend(token=args.token, production_authorized=False)
+    backend = MockHorizonsBackend(token=args.token, mode=args.mode)
     for i in range(args.jobs):
         code, name = SIM_PRODUCTS[i % len(SIM_PRODUCTS)]
-        backend.add_job(player_id=str(200000000 + i), product_code=code, product_name=name)
+        backend.add_task(player_id=str(200000000 + i), kind=code, product_name=name)
     server = backend.serve("127.0.0.1", args.port)
-    print(f"Backend simulado en http://127.0.0.1:{args.port}/api/agent/v1")
-    print(f"  agent_id={backend.agent_id}  token={args.token}  código de emparejamiento=PAIR-0001")
+    print(f"Backend simulado (contrato real) en http://127.0.0.1:{args.port}/hcgi/api  modo={args.mode}")
+    print(f"  DX_AGENT_TOKEN={args.token}")
     print("  Configure DXAGENT_ALLOW_INSECURE_HTTP_LOCALHOST=true para usarlo (solo pruebas locales).")
     try:
         server.serve_forever()
@@ -146,7 +156,8 @@ def cmd_mock_backend(args) -> int:
     return 0
 
 
-def cmd_pair(args) -> int:
+def cmd_check_api(_args) -> int:
+    """Heartbeat + tareas actuales. No reclama tareas ni modifica pedidos."""
     from dxagent.api.client import HorizonsApiClient
     from dxagent.api.contract import ApiContract
     from dxagent.settings import SettingsManager
@@ -155,18 +166,18 @@ def cmd_pair(args) -> int:
     s = manager.load()
 
     async def go():
-        client = HorizonsApiClient(s.api_url, s.agent_id, None, ApiContract.load(s.openapi_contract_path or None,
-                                   s.route_overrides), s.api_timeout_seconds, s.allow_insecure_http_localhost)
+        client = HorizonsApiClient(s.api_url, manager.secrets.get("agent_token"),
+                                   ApiContract.load(s.openapi_contract_path or None, s.route_overrides),
+                                   agent_name=s.agent_name, timeout=s.api_timeout_seconds,
+                                   allow_insecure_localhost=s.allow_insecure_http_localhost)
         try:
-            return await client.pair(args.code)
+            state = await client.heartbeat()
+            current = await client.current_tasks()
+            return {"api_url": client.base_url, "server": state.__dict__,
+                    "tareas_reclamadas_por_este_agente": len(current)}
         finally:
             await client.aclose()
-
-    result = asyncio.run(go())
-    protected = manager.secrets.set("agent_token", result["agent_token"])
-    s.agent_id = result["agent_id"]
-    manager.save(s)
-    print(f"Agente emparejado: {result['agent_id']} (token {'protegido por Windows' if protected else 'en memoria'})")
+    _print(asyncio.run(go()))
     return 0
 
 
@@ -215,7 +226,7 @@ def cmd_analyze(args) -> int:
         return 1
     wf = load_workflow(args.workflow or s.workflow_id)
     db = LocalDatabase(paths.db_path())
-    tracker = UsageTracker(db, PricingTable.load(s.pricing_path or None), s.agent_id or "local",
+    tracker = UsageTracker(db, PricingTable.load(s.pricing_path or None), s.agent_name or "local",
                            s.max_ai_cost_per_order_usd, s.daily_ai_budget_usd, s.max_ai_requests_per_order,
                            s.ai_reserve_per_request_usd)
     vision = OpenAIVisionAgent(build_openai_client(key, s.openai_timeout_seconds), s.openai_model, tracker,
@@ -270,11 +281,11 @@ def build_parser() -> argparse.ArgumentParser:
     mb = sub.add_parser("mock-backend", help="Backend simulado local")
     mb.add_argument("--port", type=int, default=8787)
     mb.add_argument("--jobs", type=int, default=10)
-    mb.add_argument("--token", default="test-token-123456")
-    pair = sub.add_parser("pair", help="Emparejar con DiamantesExpress")
-    pair.add_argument("--code", required=True)
+    mb.add_argument("--token", default="dxa_test_token_123456")
+    mb.add_argument("--mode", default="simulation", choices=["off", "simulation", "supervised", "production"])
+    sub.add_parser("check-api", help="Heartbeat real contra DiamantesExpress (no reclama tareas)")
     sec = sub.add_parser("set-secret", help="Guardar un secreto")
-    sec.add_argument("name", choices=["agent-token", "openai-key"])
+    sec.add_argument("name", choices=["agent-token", "openai-key"])  # agent-token = dxa_...
     shot = sub.add_parser("screenshot", help="Captura por ADB")
     shot.add_argument("--out", default="captura.png")
     an = sub.add_parser("analyze-screen", help="Analizar captura con OpenAI")
@@ -296,7 +307,7 @@ def main(argv: list[str] | None = None) -> int:
     if command == "service":
         from dxagent.service.bootstrap import run_service
         return run_service()
-    handlers = {"doctor": cmd_doctor, "simulate": cmd_simulate, "mock-backend": cmd_mock_backend, "pair": cmd_pair,
+    handlers = {"doctor": cmd_doctor, "simulate": cmd_simulate, "mock-backend": cmd_mock_backend, "check-api": cmd_check_api,
                 "set-secret": cmd_set_secret, "screenshot": cmd_screenshot, "analyze-screen": cmd_analyze,
                 "autostart": cmd_autostart, "emergency-stop": cmd_emergency, "clear-emergency": cmd_emergency}
     return handlers[command](args)

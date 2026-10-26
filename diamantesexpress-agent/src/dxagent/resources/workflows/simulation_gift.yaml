@@ -12,7 +12,8 @@ app:
 
 order_rules:
   player_id_pattern: '^[0-9]{5,15}$'
-  products:            # código del pedido -> etiqueta visible en la app
+  products:            # kind/código de la tarea -> etiqueta visible en la app de simulación
+    pase_booyah: "Pase Booyah"
     DIAMANTES_100: "100 Diamantes"
     DIAMANTES_310: "310 Diamantes"
     DIAMANTES_520: "520 Diamantes"

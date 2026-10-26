@@ -13,7 +13,7 @@ class ApiUnavailable(ApiError):
 
 
 class AuthError(ApiError):
-    """Token inválido, expirado o revocado (401/403): detener y pedir nuevo emparejamiento."""
+    """Token inválido, expirado o revocado (401/403): detener hasta cargar un token dxa_ nuevo."""
 
 
 class ConflictError(ApiError):
@@ -26,3 +26,7 @@ class ContractError(ApiError):
 
 class InsecureUrlError(ApiError):
     """Se intentó usar HTTP sin TLS fuera de localhost."""
+
+
+class NotFoundError(ApiError):
+    """404: la tarea no existe (task_not_found)."""

@@ -41,10 +41,18 @@ Marque cada punto y guarde `dxagent-cli.exe doctor` y los logs como evidencia.
       confianza mínima configurada; si no, el flujo se detiene con `SCREEN_UNRECOGNIZED`.
 
 ## E. Horizons
-- [ ] Obtener el OpenAPI real y cargarlo (o configurar `route_overrides`). `doctor` debe mostrar 12 operaciones.
-- [ ] Emparejamiento, heartbeat, reclamación atómica (dos agentes, un solo ganador), progreso, consumo
-      deduplicado por `record_id`, evidencias, cierre y liberación.
+- [ ] `doctor` muestra el contrato oficial con 5 operaciones y `audit_log.integro=true`.
+- [ ] `check-api` con el dominio publicado y un token `dxa_` real devuelve el modo del servidor (no reclama tareas).
+- [ ] Servidor en `simulation` + *Automatización → Simular*: el agente reclama, ejecuta en la app ficticia y la tarea
+      queda `completed` con `usage` y `evidence` visibles en el panel.
+- [ ] Servidor en `off` o pausado: el agente muestra "En espera del servidor" y no reclama.
+- [ ] Dos agentes con tokens distintos: una tarea la reclama uno solo.
+- [ ] Desconectar Internet tras reclamar: no se envía nada; al volver, el resultado se sincroniza sin duplicarse.
+- [ ] Reiniciar la PC durante una tarea: tras el arranque, la tarea queda en `manual_review` (`uncertain`) si se
+      había pulsado "enviar", o vuelve a `pending` al vencer el lease si no.
 - [ ] Revocar el token desde el panel → el agente pasa a *Error de credenciales*.
+- [ ] Confirmar con Horizons si `supervised` debe permitir la entrega real con aprobación humana local
+      (ver la tabla de modos en HORIZONS.md).
 
 ## F. Free Fire (FASE 9, solo tras A–E)
 - [ ] Confirmar que los Términos de Servicio permiten la operación asistida en la cuenta usada.
@@ -52,4 +60,4 @@ Marque cada punto y guarde `dxagent-cli.exe doctor` y los logs como evidencia.
       descripciones de pantallas, regla del ID, catálogo de regalos). Ningún valor se debe suponer.
 - [ ] Ejecutar solo en **SUPERVISADO**, con aprobación humana en cada envío, durante el período de validación.
 - [ ] PRODUCCIÓN AUTORIZADA únicamente con `authorization.authorized=true`, referencia y fecha de validación,
-      y `production_authorized=true` habilitado en Horizons para ese agente.
+      y DiamantesExpress en modo `production` (confirmado por el SUPER_ADMIN).

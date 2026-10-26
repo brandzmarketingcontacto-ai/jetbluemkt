@@ -1,4 +1,4 @@
-"""Página de Configuración: API, emparejamiento, secretos, BlueStacks, OpenAI, presupuesto, modo y 24/7."""
+"""Página de Configuración: API, token del agente, secretos, BlueStacks, OpenAI, presupuesto, modo y 24/7."""
 
 from __future__ import annotations
 
@@ -89,28 +89,21 @@ class SettingsPage(QScrollArea):
         # --- API
         box, f = section("Conexión con DiamantesExpress (Hostinger Horizons)")
         self.api_url = QLineEdit(s.api_url)
-        self.api_url.setPlaceholderText("https://…/api/agent/v1")
-        self.agent_id = QLineEdit(s.agent_id)
+        self.api_url.setPlaceholderText("https://<dominio-publicado>/hcgi/api")
+        self.agent_name = QLineEdit(s.agent_name)
+        self.agent_name.setPlaceholderText("PC-WINDOWS-01 (vacío = nombre del equipo)")
         self.contract = QLineEdit(s.openapi_contract_path)
-        self.contract.setPlaceholderText("Vacío = contrato provisional incluido")
+        self.contract.setPlaceholderText("Vacío = contrato oficial incluido (OpenAPI 1.0.0 de Horizons)")
         self.poll = dspin(s.poll_interval_seconds, 3600, 1, 1)
         self.heartbeat = dspin(s.heartbeat_interval_seconds, 3600, 1, 5)
         f.addRow("URL de la API", self.api_url)
-        f.addRow("ID del agente", self.agent_id)
+        f.addRow("Nombre del agente", self.agent_name)
         f.addRow("Contrato OpenAPI", self.contract)
-        f.addRow("Consulta de pedidos (s)", self.poll)
+        f.addRow("Consulta de tareas (s)", self.poll)
         f.addRow("Heartbeat (s)", self.heartbeat)
-        pair_row = QHBoxLayout()
-        self.pair_code = QLineEdit()
-        self.pair_code.setPlaceholderText("Código de emparejamiento del panel de superadministrador")
-        pair_btn = QPushButton("Emparejar")
-        pair_btn.clicked.connect(self.pair)
-        test_btn = QPushButton("Probar conexión")
+        test_btn = QPushButton("Probar conexión (heartbeat, no reclama tareas)")
         test_btn.clicked.connect(self.test_api)
-        pair_row.addWidget(self.pair_code)
-        pair_row.addWidget(pair_btn)
-        pair_row.addWidget(test_btn)
-        f.addRow("Emparejamiento", pair_row)
+        f.addRow("", test_btn)
         lay.addWidget(box)
 
         # --- Secretos
@@ -119,7 +112,7 @@ class SettingsPage(QScrollArea):
         self.openai_status = QLabel()
         self.token_input = QLineEdit()
         self.token_input.setEchoMode(QLineEdit.Password)
-        self.token_input.setPlaceholderText("Token del agente (solo si no usa emparejamiento)")
+        self.token_input.setPlaceholderText("dxa_... (Automatización → Tokens del agente; se muestra una sola vez)")
         self.openai_input = QLineEdit()
         self.openai_input.setEchoMode(QLineEdit.Password)
         self.openai_input.setPlaceholderText("sk-…")
@@ -249,7 +242,7 @@ class SettingsPage(QScrollArea):
     def collect(self) -> AgentSettings:
         data = self.s.model_dump()
         data.update(
-            api_url=self.api_url.text(), agent_id=self.agent_id.text().strip(),
+            api_url=self.api_url.text(), agent_name=self.agent_name.text().strip(),
             openapi_contract_path=self.contract.text().strip(), poll_interval_seconds=self.poll.value(),
             heartbeat_interval_seconds=self.heartbeat.value(), device_backend=self.device_backend.currentData(),
             bluestacks_install_dir=self.bs_dir.text().strip(), bluestacks_conf_path=self.bs_conf.text().strip(),
@@ -276,8 +269,8 @@ class SettingsPage(QScrollArea):
             return
         if settings.automation_mode == AutomationMode.AUTHORIZED_PRODUCTION and \
                 QMessageBox.question(self, "Producción autorizada",
-                                     "Este modo solo funciona con un flujo cuya autorización fue validada y con "
-                                     "production_authorized=true en DiamantesExpress. ¿Confirmar?") != QMessageBox.Yes:
+                                     "Este modo solo ejecuta entregas reales con un flujo cuya autorización fue "
+                                     "validada y cuando DiamantesExpress está en modo production. ¿Confirmar?") != QMessageBox.Yes:
             return
         self.manager.save(settings)
         try:
@@ -297,6 +290,10 @@ class SettingsPage(QScrollArea):
         value = field.text().strip()
         if not value:
             return
+        if name == "agent_token" and not value.startswith("dxa_"):
+            if QMessageBox.question(self, "Token", "Los tokens de DiamantesExpress empiezan con dxa_. "
+                                    "¿Guardar de todos modos?") != QMessageBox.Yes:
+                return
         protected = self.manager.secrets.set(name, value)
         field.clear()
         self.refresh_secret_status()
@@ -309,40 +306,16 @@ class SettingsPage(QScrollArea):
         from dxagent.api.contract import ApiContract
         s = self.collect()
         contract = ApiContract.load(s.openapi_contract_path or None, s.route_overrides)
-        return HorizonsApiClient(s.api_url, s.agent_id, self.manager.secrets.get("agent_token"), contract,
-                                 s.api_timeout_seconds, s.allow_insecure_http_localhost)
-
-    def pair(self) -> None:
-        code = self.pair_code.text().strip()
-        if not code:
-            return
-
-        def work():
-            async def go():
-                client = self._api_client()
-                try:
-                    return await client.pair(code)
-                finally:
-                    await client.aclose()
-            return asyncio.run(go())
-
-        def done(result, error):
-            if error:
-                QMessageBox.critical(self, "Emparejamiento", f"No se pudo emparejar: {error}")
-                return
-            self.manager.secrets.set("agent_token", result["agent_token"])
-            self.agent_id.setText(result["agent_id"])
-            self.pair_code.clear()
-            self.refresh_secret_status()
-            self.save()
-        run_in_background(work, done)
+        return HorizonsApiClient(s.api_url, self.manager.secrets.get("agent_token"), contract,
+                                 agent_name=s.agent_name, timeout=s.api_timeout_seconds,
+                                 allow_insecure_localhost=s.allow_insecure_http_localhost)
 
     def test_api(self) -> None:
         def work():
             async def go():
                 client = self._api_client()
                 try:
-                    return await client.get_config()
+                    return await client.heartbeat()
                 finally:
                     await client.aclose()
             return asyncio.run(go())
@@ -351,7 +324,9 @@ class SettingsPage(QScrollArea):
             if error:
                 QMessageBox.warning(self, "Conexión", f"Fallo: {type(error).__name__}: {error}")
             else:
-                QMessageBox.information(self, "Conexión", f"API correcta. Configuración remota: {result}")
+                QMessageBox.information(self, "Conexión",
+                                        f"API correcta.\nModo del servidor: {result.mode}\nEn pausa: {result.paused}\n"
+                                        f"Acepta trabajo: {result.accepted}\nLease: {result.lease_seconds}s")
         run_in_background(work, done)
 
     def verify_openai(self) -> None:

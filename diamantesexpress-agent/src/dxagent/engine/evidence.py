@@ -17,7 +17,7 @@ class EvidenceManager:
         self.db = db
         self.root = root
 
-    def save(self, job_id: str, kind: str, data: bytes, label: str, upload: bool = True) -> str:
+    def save(self, job_id: str, kind: str, data: bytes, label: str) -> str:
         evidence_id = f"ev-{uuid.uuid4().hex[:12]}"
         folder = self.root / job_id
         folder.mkdir(parents=True, exist_ok=True)
@@ -26,14 +26,17 @@ class EvidenceManager:
         path.write_bytes(data)
         digest = hashlib.sha256(data).hexdigest()
         self.db.add_evidence(evidence_id, job_id, kind, str(path), digest, label)
-        if upload:
-            meta = {"evidence_id": evidence_id, "kind": kind, "sha256": digest, "label": label}
-            self.db.enqueue("evidence", f"evidence:{evidence_id}", {"metadata": meta, "path": str(path)}, job_id)
+        # Horizons no recibe archivos: la evidencia viaja como hash sha256 + metadatos en el resultado.
         return evidence_id
 
-    def save_json(self, job_id: str, label: str, payload: dict, upload: bool = True) -> str:
+    def save_json(self, job_id: str, label: str, payload: dict) -> str:
         return self.save(job_id, "summary", json.dumps(payload, ensure_ascii=False, indent=2, default=str).encode(),
-                         label, upload)
+                         label)
+
+    def summary(self, job_id: str, limit: int = 20) -> list[dict]:
+        """Referencias compactas (sha256) para el campo `evidence` del resultado (máx. 2 MB en Horizons)."""
+        return [{"id": e["evidence_id"], "kind": e["kind"], "label": e["label"], "sha256": f"sha256:{e['sha256']}"}
+                for e in self.db.evidence_for(job_id)[-limit:]]
 
     def cleanup(self, retention_days: int) -> int:
         cutoff = time.time() - retention_days * 86400

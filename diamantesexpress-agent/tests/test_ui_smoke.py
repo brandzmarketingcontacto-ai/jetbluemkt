@@ -14,7 +14,7 @@ def test_main_window_renders_and_sends_commands(qtbot_free_app):
 
     db = LocalDatabase(paths.db_path())
     db.set_status("agent", {"state": "RUNNING", "api_online": True, "device_ok": True, "mode": "SIMULATION",
-                            "pending_jobs": 3})
+                            "server": {"mode": "simulation", "paused": False}})
     db.create_approval("apr-1", "job-1", "send", {"order_id": "DX-1", "recipient": "123456789",
                                                    "product_label": "100 Diamantes", "product_code": "DIAMANTES_100"})
     window = MainWindow(start_service=False)
@@ -25,7 +25,7 @@ def test_main_window_renders_and_sends_commands(qtbot_free_app):
         time.sleep(0.02)
     assert window.last_snapshot["service_alive"] is True
     assert "En ejecución" in window.pill_agent.text()
-    assert window.metrics[1].value.text() == "3"
+    assert window.metrics[1].value.text() == "simulation"
     assert window.approval_box.isVisibleTo(window)
     window.operator_name.setText("Luis")
     window.decide(True)

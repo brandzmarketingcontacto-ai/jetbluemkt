@@ -9,6 +9,7 @@ import sys
 
 from dxagent import paths
 from dxagent.android.bluestacks import BlueStacksManager
+from dxagent.audit import AuditLog
 from dxagent.android.mock_device import MockDevice
 from dxagent.database import LocalDatabase
 from dxagent.logging_setup import setup_logging
@@ -22,7 +23,7 @@ log = logging.getLogger(__name__)
 def build_service(manager: SettingsManager | None = None) -> AgentService:
     manager = manager or SettingsManager()
     settings = manager.load()
-    db = LocalDatabase(paths.db_path())
+    db = LocalDatabase(paths.db_path(), audit=AuditLog(paths.logs_dir() / "audit.jsonl"))
     bluestacks = None
     if settings.device_backend == "adb":
         bluestacks = BlueStacksManager(settings.bluestacks_install_dir, settings.bluestacks_conf_path,

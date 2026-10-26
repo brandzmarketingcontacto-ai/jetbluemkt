@@ -23,6 +23,7 @@ SIM_PACKAGE = "com.diamantesexpress.giftsim"
 SIM_ACTIVITY = ".MainActivity"
 LAUNCHER_PACKAGE = "com.android.launcher3"
 SIM_PRODUCTS = [
+    ("pase_booyah", "Pase Booyah"),  # único producto que Horizons enruta hoy al agente (kind=pase_booyah)
     ("DIAMANTES_100", "100 Diamantes"),
     ("DIAMANTES_310", "310 Diamantes"),
     ("DIAMANTES_520", "520 Diamantes"),
@@ -107,7 +108,7 @@ class MockDevice:
         elif s == "gift_select":
             els.append(Element("tv_recipient", f"Destinatario: {self.player_input}", (0.05, 0.12, 0.95, 0.17)))
             for i, (code, name) in enumerate(SIM_PRODUCTS):
-                top = 0.22 + i * 0.1
+                top = 0.2 + i * 0.09
                 els.append(Element(f"product_{code}", name, (0.1, top, 0.9, top + 0.08), btn, True))
         elif s == "confirm":
             code, name = self.selected_product or ("", "")

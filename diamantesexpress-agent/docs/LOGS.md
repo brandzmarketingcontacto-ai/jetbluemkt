@@ -9,6 +9,7 @@
 | `service.jsonl` | Servicio de ejecución (el más importante) |
 | `ui.jsonl` | Interfaz gráfica |
 | `simulate.jsonl` | Comando `simulate` |
+| `audit.jsonl` | **Registro de auditoría** (LocalAuditLog): reclamos, aprobaciones, inicio/envío del paso de entrega, verificación, resultado y alertas. Solo-anexar y encadenado por sha256; `doctor` verifica su integridad. No rota. |
 
 Rotación: 5 MB por archivo, 10 copias (`service.jsonl.1` … `.10`).
 
@@ -49,7 +50,11 @@ Antes de escribirse, cada línea pasa por un filtro que reemplaza por `***`:
 | `RECIPIENT_NOT_FOUND` | La app indicó que el destinatario no existe. |
 | `DATA_MISMATCH` | Lo visible antes del envío no coincide con el pedido. No se envió. |
 | `APPROVAL_REJECTED` / `APPROVAL_EXPIRED` | Decisión humana negativa / sin respuesta. No se envió. |
-| `BACKEND_UNREACHABLE` | No se pudo revalidar el pedido antes del envío. No se envió. |
+| `BACKEND_UNREACHABLE` | No se pudo revalidar la tarea antes del envío. No se envió. |
+| `JOB_NO_LONGER_ASSIGNED`, `LEASE_LOST` | El servidor ya no asigna la tarea a este agente (409). No se envió. |
+| `MODE_MISMATCH` | La tarea llegó en un modo que el agente no puede ejecutar. No se envió. |
+| `DUPLICATE_ORDER`, `UNKNOWN_LOCAL_STATE` | Duplicado o tarea sin registro local → `uncertain` (revisión manual). |
+| `task_already_finished`, `task_owned_by_other_agent` | Respuestas 409 de Horizons; se registran como alerta. |
 | `COMMIT_UNCERTAIN`, `RESULT_UNCERTAIN`, `RESTART_DURING_COMMIT` | Resultado incierto → **revisión manual**. |
 | `DAILY_BUDGET`, `ORDER_BUDGET`, `ORDER_REQUESTS`, `PRICING_MISSING` | Límites de IA. |
 | `MAX_ACTIONS`, `MAX_DURATION`, `MAX_CONSECUTIVE_ERRORS` | Límites de ejecución. |

@@ -23,6 +23,7 @@ import java.util.UUID;
  */
 public class MainActivity extends Activity {
     private static final String[][] PRODUCTS = {
+        {"pase_booyah", "Pase Booyah"},
         {"DIAMANTES_100", "100 Diamantes"}, {"DIAMANTES_310", "310 Diamantes"},
         {"DIAMANTES_520", "520 Diamantes"}, {"DIAMANTES_1060", "1060 Diamantes"},
     };
@@ -100,7 +101,7 @@ public class MainActivity extends Activity {
     private void showGifts() {
         reset();
         text(R.id.tv_recipient, "Destinatario: " + playerId, 16);
-        int[] ids = {R.id.product_DIAMANTES_100, R.id.product_DIAMANTES_310, R.id.product_DIAMANTES_520,
+        int[] ids = {R.id.product_pase_booyah, R.id.product_DIAMANTES_100, R.id.product_DIAMANTES_310, R.id.product_DIAMANTES_520,
                      R.id.product_DIAMANTES_1060};
         for (int i = 0; i < PRODUCTS.length; i++) {
             final String[] p = PRODUCTS[i];

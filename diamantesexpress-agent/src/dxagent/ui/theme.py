@@ -16,13 +16,14 @@ COLORS = {
 STATE_COLORS = {
     "RUNNING": COLORS["ok"], "PAUSED": COLORS["warn"], "STARTING": COLORS["accent"], "STOPPED": COLORS["muted"],
     "DEGRADED": COLORS["warn"], "AUTH_ERROR": COLORS["error"], "BUDGET_EXHAUSTED": COLORS["warn"],
-    "EMERGENCY_STOP": COLORS["error"], "SIN SERVICIO": COLORS["error"],
+    "EMERGENCY_STOP": COLORS["error"], "SIN SERVICIO": COLORS["error"], "SERVER_HOLD": COLORS["warn"],
 }
 
 STATE_LABELS = {
     "RUNNING": "En ejecución", "PAUSED": "En pausa", "STARTING": "Iniciando", "STOPPED": "Detenido",
     "DEGRADED": "Degradado", "AUTH_ERROR": "Error de credenciales", "BUDGET_EXHAUSTED": "Presupuesto IA agotado",
     "EMERGENCY_STOP": "PARADA DE EMERGENCIA", "SIN SERVICIO": "Servicio no iniciado",
+    "SERVER_HOLD": "En espera del servidor",
 }
 
 JOB_LABELS = {
