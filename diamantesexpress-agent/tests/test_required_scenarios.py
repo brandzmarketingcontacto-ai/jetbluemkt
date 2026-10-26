@@ -154,7 +154,9 @@ async def test_06_android_frozen_restarts_only_when_safe(agent_factory, backend,
     await agent.startup()
     assert await agent.work_once() is False
     assert agent.state == AgentState.DEGRADED
-    await agent.watchdog.check_once()
+    await agent.watchdog.check_once()  # marca el inicio del congelamiento
+    # Simula que pasó el umbral (el reloj monotónico de Windows avanza en saltos de ~15 ms).
+    agent.watchdog.device_down_since = time.monotonic() - 1000
     await agent.watchdog.check_once()
     assert bs.restarts >= 1
     # Con una operación incierta registrada, el reinicio queda bloqueado.
