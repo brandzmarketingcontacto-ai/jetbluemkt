@@ -5,10 +5,17 @@ No solicita permisos de red. Sus `resource-id` coinciden con `src/dxagent/androi
 y con `simulation_gift.yaml` / `simulation_friend.yaml` (API v1.1: amistad, pestañas pase/caja/token, cantidad con –/+
 y saldo ficticio de diamantes).
 
-> Estado: código fuente escrito pero **no compilado** en el entorno de desarrollo (no había Android SDK).
-> Compílelo en Windows con Android Studio y valide con la lista de `docs/PRUEBAS_WINDOWS.md`.
+> GitHub Actions compila el APK en cada cambio y lo incluye en el descargable `DiamantesExpressAgent-windows`
+> (`android-sim\dx-gift-simulator.apk`, junto al programa). No hace falta Android Studio.
 
-## Compilar e instalar
+## Instalar en el emulador (recomendado)
+
+1. Active ADB en el emulador (ver abajo) y elija el emulador en *Configuración* del programa.
+2. Menú Inicio → **DiamantesExpress Agent → Instalar app de simulación en el emulador**, o bien:
+   `dxagent-cli.exe install-sim-apk`
+   El comando abre el emulador si está cerrado y solo puede instalar esta app ficticia.
+
+## Compilar a mano (opcional)
 
 1. Abra esta carpeta en Android Studio (Hedgehog o superior, JDK 17) y deje que genere el wrapper de Gradle.
 2. *Build → Build APK(s)*. El APK queda en `app/build/outputs/apk/debug/app-debug.apk`.

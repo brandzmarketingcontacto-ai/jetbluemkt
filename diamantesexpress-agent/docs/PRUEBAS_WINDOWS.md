@@ -40,7 +40,7 @@ Marque cada punto y guarde `dxagent-cli.exe doctor` y los logs como evidencia.
       Configuración reinicia el servicio con el otro emulador.
 
 ## C. App de simulación en el emulador
-- [ ] Compilar e instalar `android-sim` (Android Studio).
+- [ ] `dxagent-cli.exe install-sim-apk` instala el APK incluido (`android-sim\dx-gift-simulator.apk`) en el emulador.
 - [ ] `uiautomator dump` expone los `resource-id` esperados (`btn_start`, `field_player_id`, …).
 - [ ] Modo SIMULACIÓN + `device_backend=adb`: 20 pedidos con el backend simulado → todos `completed`.
 - [ ] `--es outcome failure` → `failed/DELIVERY_REJECTED`; `--es outcome uncertain` → `needs_review`.

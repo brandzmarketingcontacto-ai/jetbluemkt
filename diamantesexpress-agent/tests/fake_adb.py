@@ -29,6 +29,8 @@ if args[:2] == ["-s", "127.0.0.1:5565"]:
         sys.stdout.buffer.write(b"\x89PNG\r\n\x1a\nfake")
     elif rest[:3] == ["shell", "pm", "path"]:
         print("package:/data/app/base.apk" if rest[3] == "com.diamantesexpress.giftsim" else "")
+    elif rest[:2] == ["install", "-r"]:
+        print("Success")
     elif rest[:2] == ["shell", "getprop"]:
         print("1")
     sys.exit(0)

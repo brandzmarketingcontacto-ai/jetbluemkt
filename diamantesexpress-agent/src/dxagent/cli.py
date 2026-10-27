@@ -5,6 +5,7 @@
   dxagent doctor                  Diagnóstico del entorno (no consume tokens)
   dxagent simulate --orders 100   Simulación integral aislada (backend + Android ficticios)
   dxagent mock-backend            Backend DiamantesExpress simulado en localhost
+  dxagent install-sim-apk         Instala la app de simulación en BlueStacks/LDPlayer
   dxagent check-api               Heartbeat real contra DiamantesExpress (no reclama tareas)
   dxagent set-secret NOMBRE       Guardar token o clave OpenAI en el almacén seguro
   dxagent screenshot --out f.png  Captura real por ADB
@@ -229,6 +230,27 @@ def cmd_screenshot(args) -> int:
     return 0
 
 
+def cmd_install_sim_apk(args) -> int:
+    """Instala en el emulador configurado la app ficticia incluida en el descargable (sin Android Studio)."""
+    from dxagent import paths
+    from dxagent.android.emulator import build_emulator
+    from dxagent.settings import SettingsManager
+    apk = Path(args.apk) if args.apk else paths.simulator_apk()
+    if not apk.is_file():
+        print(f"No se encontró la app de simulación en {apk}")
+        return 1
+    s = SettingsManager().load()
+    manager = build_emulator(s)
+
+    async def go():
+        device = await manager.ensure_ready(s.emulator_boot_timeout_seconds)
+        installed = await device.install_simulator_apk(apk)
+        return {"serial": device.serial, "apk": str(apk), "instalada": installed}
+    result = asyncio.run(go())
+    _print(result)
+    return 0 if result["instalada"] else 1
+
+
 def cmd_analyze(args) -> int:
     from dxagent import paths
     from dxagent.ai.pricing import PricingTable
@@ -323,6 +345,8 @@ def build_parser() -> argparse.ArgumentParser:
     mb.add_argument("--token", default="dxa_test_token_123456")
     mb.add_argument("--friend-retry-minutes", type=int, default=1)
     mb.add_argument("--mode", default="simulation", choices=["off", "simulation", "supervised", "production"])
+    isa = sub.add_parser("install-sim-apk", help="Instala la app de simulación en el emulador configurado")
+    isa.add_argument("--apk", default="", help="Ruta del APK (por defecto, el incluido junto al programa)")
     sub.add_parser("check-api", help="Heartbeat real contra DiamantesExpress (no reclama tareas)")
     sec = sub.add_parser("set-secret", help="Guardar un secreto")
     sec.add_argument("name", choices=["agent-token", "openai-key"])  # agent-token = dxa_...
@@ -352,6 +376,6 @@ def main(argv: list[str] | None = None) -> int:
         return run_service()
     handlers = {"doctor": cmd_doctor, "simulate": cmd_simulate, "mock-backend": cmd_mock_backend,
                 "check-api": cmd_check_api, "set-secret": cmd_set_secret, "screenshot": cmd_screenshot,
-                "analyze-screen": cmd_analyze, "autostart": cmd_autostart, "configure": cmd_configure,
+                "analyze-screen": cmd_analyze, "install-sim-apk": cmd_install_sim_apk, "autostart": cmd_autostart, "configure": cmd_configure,
                 "emergency-stop": cmd_emergency, "clear-emergency": cmd_emergency}
     return handlers[command](args)

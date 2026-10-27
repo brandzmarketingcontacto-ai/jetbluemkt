@@ -8,7 +8,36 @@ on:
   workflow_dispatch:
 
 jobs:
+  android-sim-apk:
+    # App FICTICIA de simulación (sin red ni envíos reales) para instalar en BlueStacks/LDPlayer.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: diamantesexpress-agent/android-sim
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+      - name: Compilar APK de simulación
+        run: gradle --no-daemon assembleDebug
+      - name: Preparar APK
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/debug/app-debug.apk out/dx-gift-simulator.apk
+          "$ANDROID_HOME"/build-tools/*/aapt dump badging out/dx-gift-simulator.apk | head -1 || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dx-gift-simulator-apk
+          path: diamantesexpress-agent/android-sim/out/dx-gift-simulator.apk
+
   test-and-build:
+    needs: android-sim-apk
     runs-on: windows-latest
     defaults:
       run:
@@ -28,6 +57,11 @@ jobs:
         run: |
           python packaging/make_icon.py
           pyinstaller packaging/dxagent.spec --noconfirm --clean
+      - name: Descargar APK de simulación
+        uses: actions/download-artifact@v4
+        with:
+          name: dx-gift-simulator-apk
+          path: diamantesexpress-agent/dist/DiamantesExpressAgent/android-sim
       - name: Verificar EXE
         shell: pwsh
         run: |
@@ -35,6 +69,7 @@ jobs:
           .\dist\DiamantesExpressAgent\dxagent-cli.exe doctor
           .\dist\DiamantesExpressAgent\dxagent-cli.exe simulate --orders 25
           if ($LASTEXITCODE -ne 0) { throw "simulación fallida" }
+          if (-not (Test-Path .\dist\DiamantesExpressAgent\android-sim\dx-gift-simulator.apk)) { throw "falta el APK" }
       - name: Instalador (Inno Setup)
         shell: pwsh
         run: |

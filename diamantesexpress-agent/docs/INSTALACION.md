@@ -22,7 +22,8 @@
    cerrar la instancia, y su `adb.exe` para controlarla.
 
 En ambos:
-3. Instale la app de simulación (ver `android-sim/README.md`) para la fase de pruebas.
+3. Instale la app de simulación para la fase de pruebas: menú Inicio → *Instalar app de simulación en el emulador*
+   (o `dxagent-cli.exe install-sim-apk`). El APK viene incluido en el descargable.
 4. Recomendado: resolución fija de la instancia y sin rotación automática.
 5. Use **uno solo** de los dos emuladores en la PC: los dos traen su propio `adb` y pueden interferir entre sí.
 

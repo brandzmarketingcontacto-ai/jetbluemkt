@@ -65,3 +65,19 @@ async def test_hierarchy_parser_from_mock(device):
     btn = next(n for n in nodes if n.short_id == "btn_start")
     assert btn.clickable and btn.text == "Enviar regalo"
     assert parse_hierarchy("basura <no xml") == []
+
+
+async def test_install_only_the_simulator_apk(fake_adb, tmp_path):
+    from dxagent.android.adb import SIM_APK_NAME
+    exe, calls = fake_adb
+    device = ADBController(AdbRunner(exe, timeout=10), "127.0.0.1:5565")
+    apk = tmp_path / SIM_APK_NAME
+    apk.write_bytes(b"PK")
+    assert await device.install_simulator_apk(apk) is True
+    assert ["-s", "127.0.0.1:5565", "install", "-r", str(apk)] in calls()
+    other = tmp_path / "otra.apk"
+    other.write_bytes(b"PK")
+    with pytest.raises(UnauthorizedOperation):
+        await device.install_simulator_apk(other)
+    with pytest.raises(UnauthorizedOperation):
+        await device.install_simulator_apk(tmp_path / "falta" / SIM_APK_NAME)

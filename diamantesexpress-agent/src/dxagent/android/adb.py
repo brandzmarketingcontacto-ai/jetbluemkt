@@ -22,6 +22,10 @@ log = logging.getLogger(__name__)
 _SERIAL_RE = re.compile(r"^[A-Za-z0-9_.:\-]+$")
 
 
+SIM_APK_NAME = "dx-gift-simulator.apk"
+SIM_APK_PACKAGE = "com.diamantesexpress.giftsim"
+
+
 @dataclass
 class AdbDevice:
     serial: str
@@ -183,6 +187,14 @@ class ADBController:
             await self._shell("am", "start", "-n", f"{package}/{activity}")
         else:
             await self._shell("monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1")
+
+    async def install_simulator_apk(self, apk: Path) -> bool:
+        """Instala SOLO la app ficticia de simulación (no permite instalar APK arbitrarios)."""
+        apk = Path(apk)
+        if apk.name != SIM_APK_NAME or not apk.is_file():
+            raise UnauthorizedOperation(f"Solo se instala la app de simulación ({SIM_APK_NAME})")
+        await self.runner.run("install", "-r", str(apk), serial=self.serial, timeout=180)
+        return await self.is_package_installed(SIM_APK_PACKAGE)
 
     async def is_package_installed(self, package: str) -> bool:
         validate_package(package)

@@ -56,6 +56,18 @@ def resources_dir() -> Path:
     return Path(__file__).resolve().parent / "resources"
 
 
+def app_dir() -> Path:
+    """Carpeta de instalación (junto al EXE) o raíz del proyecto en desarrollo."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[2]
+
+
+def simulator_apk() -> Path:
+    """APK de la app de simulación incluida en el descargable (compilada en GitHub Actions)."""
+    return app_dir() / "android-sim" / "dx-gift-simulator.apk"
+
+
 def resolve_config_file(relative: str) -> Path:
     """Busca primero en la configuración del usuario y luego en los recursos empaquetados."""
     user_file = user_config_dir() / relative

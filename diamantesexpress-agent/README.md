@@ -23,8 +23,8 @@ junto con los tokens y el costo consumidos.
 | Emulador **BlueStacks 5** (`HD-Player.exe`, `bluestacks.conf`) o **LDPlayer 9** (`ldconsole.exe`): detección, instancias, inicio, espera de arranque, reinicio seguro | Implementado. Probado con instalaciones, procesos y consola simulados. **Pendiente**: validar ambos en Windows real. |
 | ADB: conexión, captura, resolución/orientación, app activa, toques, texto, apertura de apps autorizadas | Implementado. Probado con un `adb` falso (argumentos y parseo). **Pendiente**: BlueStacks real. |
 | OpenAI Responses API con salida estructurada (Pydantic) y registro de uso real | Implementado. Probado con un cliente falso que imita `responses.parse`. **Pendiente**: llamada real con su clave. |
-| Motor de flujo, política, aprobaciones, verificación independiente, recuperación, watchdog | Implementado y probado (69 pruebas, incluidas las 16 exigidas). |
-| App Android de simulación | Simulador interno probado (amistad, pestañas, cantidad y saldo). Código fuente APK en `android-sim/` **no compilado** aquí (sin Android SDK). |
+| Motor de flujo, política, aprobaciones, verificación independiente, recuperación, watchdog | Implementado y probado (70 pruebas, incluidas las 16 exigidas). |
+| App Android de simulación | Simulador interno probado (amistad, pestañas, cantidad y saldo). El APK se compila en GitHub Actions y viene en el descargable; se instala con `install-sim-apk`. **Pendiente**: probarlo en BlueStacks/LDPlayer. |
 | Flujos supervisados de Free Fire (regalo y solicitud de amistad) | **Plantillas** con la secuencia de pantallas observada y valores `<VERIFICAR>`: el motor se niega a cargarlas hasta completarlas y validarlas en la PC real. |
 | EXE de Windows | Spec y scripts listos; bundle verificado en Linux. El `.exe` se compila en Windows (`build.ps1`) o en GitHub Actions (`windows-latest`). |
 
@@ -37,7 +37,7 @@ cd diamantesexpress-agent
 python -m venv .venv; .\.venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
 $env:PYTHONPATH = "src"
-python -m pytest -q                       # 69 pruebas, ninguna hace envíos reales
+python -m pytest -q                       # 70 pruebas, ninguna hace envíos reales
 python -m dxagent simulate --orders 100   # pedidos de dos fases simulados (amistad + regalo)
 python -m dxagent doctor                  # diagnóstico (no consume tokens)
 python -m dxagent ui                      # interfaz (inicia el servicio)

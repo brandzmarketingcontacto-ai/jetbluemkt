@@ -37,6 +37,7 @@ Source: "..\dist\DiamantesExpressAgent\*"; DestDir: "{app}"; Flags: recursesubdi
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; Parameters: "ui"
 Name: "{group}\Diagnóstico"; Filename: "{cmd}"; Parameters: "/k ""{app}\dxagent-cli.exe"" doctor"
+Name: "{group}\Instalar app de simulación en el emulador"; Filename: "{cmd}"; Parameters: "/k ""{app}\dxagent-cli.exe"" install-sim-apk"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Parameters: "ui"; Tasks: desktopicon
 
 [Registry]
