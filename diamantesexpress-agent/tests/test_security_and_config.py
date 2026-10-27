@@ -55,7 +55,7 @@ def test_settings_env_precedence_and_no_secrets_on_disk(tmp_path):
 
 def test_official_contract_and_overrides(tmp_path):
     contract = ApiContract.load()
-    assert contract.version == "1.0.0"
+    assert contract.version == "1.1.0" and contract.supports("deferTask")
     assert contract.get("claimTask").method == "POST" and contract.get("claimTask").path == "/agent/tasks/claim"
     assert contract.get("reportResult").render(id="a/b") == "/agent/tasks/a%2Fb/result"
     over = ApiContract.load(overrides={"claimTask": "POST /agent/v2/tasks/claim"})

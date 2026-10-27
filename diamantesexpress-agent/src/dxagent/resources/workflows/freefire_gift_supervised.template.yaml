@@ -1,25 +1,27 @@
-# PLANTILLA — Flujo SUPERVISADO de regalos en Free Fire (FASE 9).
+# PLANTILLA — Fase B (gift): regalo SUPERVISADO en Free Fire.
 #
-# Este archivo NO contiene identificadores reales a propósito. Todos los valores marcados con
-# <VERIFICAR...> deben completarse y validarse en la PC real por una persona responsable,
-# usando únicamente funciones oficiales del juego y una cuenta autorizada para esta operación.
+# La secuencia de pantallas sigue las capturas aportadas por el operador (lobby → TIENDA → pestaña de regalos →
+# categoría → objeto → "+ SELECCIONAR A UN JUGADOR PARA REGALAR" → lista de amigos → CONFIRMAR REGALO con –/+ →
+# botón de precio). Los textos exactos, el paquete y las coordenadas NO se inventan: todo lo marcado con
+# <VERIFICAR...> debe completarse y validarse en la PC real por una persona responsable.
 # El motor se NIEGA a cargar un flujo que contenga marcadores <VERIFICAR...>.
 #
 # Reglas:
-#  - No se modifican archivos, memoria ni protecciones del juego. Solo toques/teclas vía ADB
-#    sobre la interfaz visible, igual que haría una persona.
-#  - Antes de usarlo, confirme que los Términos de Servicio del juego y del editor permiten
-#    esta operación asistida en su cuenta. Si no lo permiten, no lo habilite.
-#  - El paso `commit` SIEMPRE requiere aprobación humana en modo SUPERVISADO.
-#  - AUTHORIZED_PRODUCTION solo es posible si `authorization.authorized` es true, existe una
-#    referencia de autorización y el backend devuelve production_authorized=true.
+#  - No se modifican archivos, memoria ni protecciones del juego. Solo toques/teclas vía ADB sobre la interfaz
+#    visible, igual que haría una persona.
+#  - Antes de usarlo, confirme que los Términos de Servicio del juego y del editor permiten esta operación asistida
+#    en su cuenta. Si no lo permiten, no lo habilite.
+#  - El paso `commit` (botón de precio, descuenta diamantes) SIEMPRE requiere aprobación humana en SUPERVISADO.
+#  - AUTHORIZED_PRODUCTION solo es posible con `authorization.authorized: true`, una referencia de autorización y el
+#    modo `production` activado por el SUPER_ADMIN en Horizons.
 #
 # Para activarlo: copie este archivo a %LOCALAPPDATA%\DiamantesExpressAgent\config\workflows\
-# como freefire_gift_supervised.yaml, complete los valores y configure workflow_id.
+# como freefire_gift_supervised.yaml, complete los valores y configure «Flujo de regalo» en Configuración.
 id: freefire_gift_supervised
-version: 1
-description: Entrega supervisada de regalo en Free Fire (plantilla)
+version: 2
+description: Regalo supervisado en Free Fire (fase gift, plantilla)
 simulation: false
+phase: gift
 allowed_modes: [SUPERVISED, AUTHORIZED_PRODUCTION]
 
 authorization:
@@ -34,51 +36,81 @@ app:
 
 order_rules:
   player_id_pattern: "<VERIFICAR: formato oficial del ID de jugador>"
-  products:
-    # Horizons enruta hoy solo kind=pase_booyah. Complete el texto visible EXACTO del regalo en el juego.
-    pase_booyah: "<VERIFICAR: texto visible exacto del Pase Booyah en la tienda de regalos>"
+  # Se usa el gameItemName exacto del catálogo agent_products de Horizons (p. ej. «Pase Booyah Premium»).
+  accept_server_catalog: true
+  default_category: pase
+  products: {}
 
 calibration:
   # Las coordenadas calibradas solo se usan si validated=true y la resolución coincide.
   validated: false
   resolution: null       # p. ej. [1600, 900] medido en la instancia real
 
-# Los juegos suelen renderizar con OpenGL/Unity y no exponen jerarquía UI:
-# la identificación de pantallas se hará con IA (descripciones) o con coordenadas calibradas.
+# El juego renderiza con Unity/OpenGL y no expone jerarquía UI: las pantallas se reconocen con IA a partir de
+# estas descripciones o con coordenadas calibradas.
 screens:
-  lobby: {description: "<VERIFICAR: descripción visual del lobby>"}
-  store: {description: "<VERIFICAR: descripción visual de la tienda>"}
-  gift_recipient: {description: "<VERIFICAR: pantalla de selección de destinatario>"}
-  gift_confirm: {description: "<VERIFICAR: pantalla de confirmación con destinatario y regalo>"}
+  lobby: {description: "<VERIFICAR: lobby principal con el botón TIENDA>"}
+  store: {description: "<VERIFICAR: tienda con la pestaña de regalos>"}
+  gift_store: {description: "<VERIFICAR: sección de regalos con pestañas de categoría (pase, cajas, tokens)>"}
+  item_detail: {description: "<VERIFICAR: detalle del objeto con «+ SELECCIONAR A UN JUGADOR PARA REGALAR»>"}
+  friend_picker: {description: "<VERIFICAR: lista de amigos con el buscador «Introduce apodo o ID»>"}
+  gift_confirm: {description: "<VERIFICAR: CONFIRMAR REGALO con destinatario, objeto, –/+ y botón de precio>"}
   gift_result_success: {description: "<VERIFICAR: confirmación oficial de regalo enviado>"}
-  gift_result_failure: {description: "<VERIFICAR: mensaje oficial de error>"}
+  gift_result_failure: {description: "<VERIFICAR: mensaje oficial de error (p. ej. diamantes insuficientes)>"}
 
 elements:
-  open_store: {description: "<VERIFICAR>", calibrated: null}
-  open_gift: {description: "<VERIFICAR>", calibrated: null}
-  recipient_field: {description: "<VERIFICAR>", calibrated: null}
-  confirm_button: {description: "<VERIFICAR>", calibrated: null}
+  open_store: {description: "<VERIFICAR: botón TIENDA del lobby>", calibrated: null}
+  open_gift_tab: {description: "<VERIFICAR: pestaña de regalos>", calibrated: null}
+  tab_pase: {description: "<VERIFICAR: categoría de pases>", calibrated: null}
+  tab_caja: {description: "<VERIFICAR: categoría de cajas>", calibrated: null}
+  tab_token: {description: "<VERIFICAR: categoría de tokens / fragmentos>", calibrated: null}
+  select_player: {description: "<VERIFICAR: botón «+ SELECCIONAR A UN JUGADOR PARA REGALAR»>", calibrated: null}
+  friend_search_field: {description: "<VERIFICAR: buscador «Introduce apodo o ID»>", calibrated: null}
+  friend_result: {description: "<VERIFICAR: fila del amigo encontrado>", calibrated: null}
+  friend_not_in_list: {description: "<VERIFICAR: lista vacía / sin resultados (aún no es amigo)>", calibrated: null}
+  gift_button: {description: "<VERIFICAR: botón de regalar junto al amigo>", calibrated: null}
+  qty_minus: {description: "<VERIFICAR: botón – de cantidad>", calibrated: null}
+  qty_plus: {description: "<VERIFICAR: botón + de cantidad (máx. 57 cajas)>", calibrated: null}
+  price_button: {description: "<VERIFICAR: botón con el precio en diamantes (envía y descuenta)>", calibrated: null}
+  close_result: {description: "<VERIFICAR: botón para cerrar el resultado>", calibrated: null}
 
 fields:
-  confirm_recipient: {description: "<VERIFICAR: dónde se muestra el destinatario antes de enviar>"}
-  confirm_product: {description: "<VERIFICAR: dónde se muestra el regalo antes de enviar>"}
-  result_recipient: {description: "<VERIFICAR>"}
+  balance: {description: "<VERIFICAR: saldo de diamantes visible en la tienda>"}
+  confirm_recipient: {description: "<VERIFICAR: destinatario mostrado en CONFIRMAR REGALO>"}
+  confirm_product: {description: "<VERIFICAR: nombre del objeto en CONFIRMAR REGALO>"}
+  confirm_quantity: {description: "<VERIFICAR: cantidad entre los botones – y +>"}
+  confirm_total_cost: {description: "<VERIFICAR: precio total en el botón de envío>"}
+  result_recipient: {description: "<VERIFICAR: destinatario en la confirmación de envío>"}
 
 steps:
   - {id: open_app, kind: launch_app}
   - {id: wait_lobby, kind: wait_screen, screen: lobby}
   - {id: store, kind: tap, element: open_store, expect: store}
-  - {id: gift, kind: tap, element: open_gift, expect: gift_recipient}
-  - {id: focus_recipient, kind: tap, element: recipient_field}
-  - {id: type_recipient, kind: input_text, value: "{recipient.player_id}"}
-  - {id: select_product, kind: tap_option, label: "{product.label}", expect: gift_confirm}
+  - {id: gift_tab, kind: tap, element: open_gift_tab, expect: gift_store}
+  - {id: read_balance, kind: read_balance, field: balance}
+  - {id: choose_category, kind: tap, element: "tab_{product.category}"}
+  - {id: select_item, kind: tap_option, label: "{product.label}", expect: item_detail}
+  - {id: pick_player, kind: tap, element: select_player, expect: friend_picker}
+  - {id: focus_search, kind: tap, element: friend_search_field}
+  - {id: type_player, kind: input_text, value: "{recipient.player_id}"}
+  - id: choose_friend
+    kind: tap
+    element: friend_result
+    exits:
+      - {element: friend_not_in_list, outcome: defer, reason: not_friend_yet, code: NOT_FRIEND_YET,
+         message: "El jugador todavía no aceptó la solicitud de amistad"}
+  - {id: gift, kind: tap, element: gift_button, expect: gift_confirm}
+  - {id: set_quantity, kind: set_quantity, plus: qty_plus, minus: qty_minus, field: confirm_quantity,
+     value: "{product.quantity}"}
   - id: verify_summary
     kind: verify_fields
     screen: gift_confirm
     checks:
       confirm_recipient: "{recipient.player_id}"
       confirm_product: "{product.label}"
-  - {id: send, kind: commit, element: confirm_button, result_screens: [gift_result_success, gift_result_failure]}
+      confirm_quantity: "{product.quantity}"
+      confirm_total_cost: "{product.total_cost}"
+  - {id: send, kind: commit, element: price_button, result_screens: [gift_result_success, gift_result_failure]}
   - id: verify_result
     kind: verify_result
     success_screen: gift_result_success
@@ -86,3 +118,4 @@ steps:
     failure_is_definitive: false
     checks:
       result_recipient: "{recipient.player_id}"
+  - {id: close, kind: tap, element: close_result, optional: true}

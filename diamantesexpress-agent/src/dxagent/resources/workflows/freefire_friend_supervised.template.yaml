@@ -1,0 +1,81 @@
+# PLANTILLA — Fase A (friend_request): solicitud de amistad SUPERVISADA en Free Fire.
+#
+# Free Fire solo permite regalar a la lista de amigos de la cuenta emisora. Este flujo busca el ID del cliente y
+# envía la solicitud. Todavía no hay capturas de esta sección: TODO lo marcado con <VERIFICAR...> debe completarse
+# en la PC real. El motor se NIEGA a cargar el flujo mientras queden marcadores.
+#
+# Resultado que se envía a Horizons (friendStatus): request_sent | already_friends | player_not_found.
+# Mismas reglas que la plantilla de regalo: solo toques sobre la interfaz visible, sin modificar el juego, y
+# confirmación previa de los Términos de Servicio.
+#
+# Para activarlo: copie este archivo como freefire_friend_supervised.yaml en
+# %LOCALAPPDATA%\DiamantesExpressAgent\config\workflows\ y configure «Flujo de solicitud de amistad».
+id: freefire_friend_supervised
+version: 1
+description: Solicitud de amistad supervisada en Free Fire (fase friend_request, plantilla)
+simulation: false
+phase: friend_request
+allowed_modes: [SUPERVISED, AUTHORIZED_PRODUCTION]
+
+authorization:
+  authorized: false
+  reference: "<VERIFICAR: referencia del acuerdo/autorización>"
+  validated_at: null
+  validated_by: null
+
+app:
+  package: "<VERIFICAR: nombre de paquete instalado, obtener con `adb shell pm list packages`>"
+  activity: null
+
+order_rules:
+  player_id_pattern: "<VERIFICAR: formato oficial del ID de jugador>"
+
+calibration:
+  validated: false
+  resolution: null
+
+screens:
+  lobby: {description: "<VERIFICAR: lobby principal con el acceso a Amigos>"}
+  friends: {description: "<VERIFICAR: pantalla de amigos con la opción de añadir>"}
+  add_friend: {description: "<VERIFICAR: buscador de jugadores por ID>"}
+  player_profile: {description: "<VERIFICAR: resultado de búsqueda con el ID y el botón de añadir>"}
+  request_sent: {description: "<VERIFICAR: confirmación de solicitud enviada>"}
+
+elements:
+  open_friends: {description: "<VERIFICAR: icono de amigos del lobby>", calibrated: null}
+  open_add_friend: {description: "<VERIFICAR: botón Añadir amigo>", calibrated: null}
+  search_field: {description: "<VERIFICAR: campo del ID>", calibrated: null}
+  search_button: {description: "<VERIFICAR: botón Buscar>", calibrated: null}
+  not_found_message: {description: "<VERIFICAR: aviso de jugador no encontrado>", calibrated: null}
+  already_friends_marker: {description: "<VERIFICAR: indicador de que ya son amigos>", calibrated: null}
+  add_button: {description: "<VERIFICAR: botón para enviar la solicitud>", calibrated: null}
+
+fields:
+  profile_id: {description: "<VERIFICAR: ID mostrado en el resultado de búsqueda>"}
+
+steps:
+  - {id: open_app, kind: launch_app}
+  - {id: wait_lobby, kind: wait_screen, screen: lobby}
+  - {id: friends, kind: tap, element: open_friends, expect: friends}
+  - {id: add, kind: tap, element: open_add_friend, expect: add_friend}
+  - {id: focus_id, kind: tap, element: search_field}
+  - {id: type_id, kind: input_text, value: "{recipient.player_id}"}
+  - id: search
+    kind: tap
+    element: search_button
+    expect: player_profile
+    exits:
+      - {element: not_found_message, outcome: completed, friend_status: player_not_found, code: PLAYER_NOT_FOUND,
+         message: "El ID del jugador no existe"}
+  - id: verify_profile
+    kind: verify_fields
+    screen: player_profile
+    checks:
+      profile_id: "{recipient.player_id}"
+    exits:
+      - {element: already_friends_marker, outcome: completed, friend_status: already_friends, message: "Ya son amigos"}
+  - {id: send_request, kind: commit, element: add_button, result_screens: [request_sent]}
+  - id: verify_request
+    kind: verify_result
+    success_screen: request_sent
+    success_data: {friend_status: request_sent}

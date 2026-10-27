@@ -87,6 +87,9 @@ class OutboxSync:
         if kind == "progress":
             await self.api.report_progress(job_id, payload["status"], payload.get("message", ""),
                                            payload.get("evidence"), item["idem_key"])
+        elif kind == "defer":
+            await self.api.defer_task(job_id, payload.get("reason", "deferred"), payload.get("retryAfterSeconds"),
+                                      payload.get("message", ""), item["idem_key"])
         elif kind == "result":
             response = await self.api.report_result(job_id, payload, item["idem_key"])
             self.db.mark_usage_synced([u["record_id"] for u in self.db.usage_for_job(job_id)])

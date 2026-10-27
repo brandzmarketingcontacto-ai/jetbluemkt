@@ -94,8 +94,12 @@ class AgentService:
                                     settings.max_ai_cost_per_order_usd, settings.daily_ai_budget_usd,
                                     settings.max_ai_requests_per_order, settings.ai_reserve_per_request_usd)
         self.vision = vision if vision is not None else self._build_vision()
-        self.workflow = workflow            # flujo configurado (real o de simulación)
+        self.workflow = workflow            # flujo de regalo configurado (real o de simulación)
+        self.friend_workflow: WorkflowDef | None = None
         self.sim_workflow: WorkflowDef | None = None
+        self.sim_friend_workflow: WorkflowDef | None = None
+        self.diamond_balance: int | None = None   # saldo leído en pantalla; se informa en el heartbeat
+        self._balance_dirty = False
         self.device_factory = device_factory
         self.device: DeviceController | None = None
         self.evidence = EvidenceManager(db, evidence_root or paths.evidence_dir())
@@ -151,6 +155,8 @@ class AgentService:
             "emulator": self.emulator.display_name if self.emulator is not None else "Simulador interno",
             "vision_enabled": self.vision is not None, "outbox_pending": self.db.outbox_pending_count(),
             "current_job_id": self.current_job.job_id if self.current_job else None,
+            "diamond_balance": self.diamond_balance,
+            "sender_account": {"name": srv.sender_account_name, "id": srv.sender_account_id},
             "emergency": self.emergency_flag.exists(), "ts": time.time(),
         })
 
@@ -187,23 +193,36 @@ class AgentService:
         mode = self.settings.automation_mode
         try:
             self.sim_workflow = load_workflow(self.settings.simulation_workflow_id)
-            if not self.sim_workflow.simulation:
-                raise WorkflowNotReady(f"{self.sim_workflow.id} no es un flujo de simulación")
+            self.sim_friend_workflow = load_workflow(self.settings.simulation_friend_workflow_id)
+            for wf, phase in ((self.sim_workflow, "gift"), (self.sim_friend_workflow, "friend_request")):
+                if not wf.simulation or wf.phase != phase:
+                    raise WorkflowNotReady(f"{wf.id} debe ser un flujo de simulación de la fase {phase}")
             if self.workflow is None:
                 self.workflow = load_workflow(self.settings.workflow_id)
-            if mode == AutomationMode.SIMULATION and not self.workflow.simulation:
+            if self.friend_workflow is None:
+                self.friend_workflow = load_workflow(self.settings.friend_workflow_id)
+            if self.workflow.phase != "gift" or self.friend_workflow.phase != "friend_request":
+                raise WorkflowNotReady("workflow_id debe ser de la fase gift y friend_workflow_id de friend_request")
+            if mode == AutomationMode.SIMULATION and not (self.workflow.simulation and self.friend_workflow.simulation):
                 raise WorkflowNotReady("El modo SIMULACIÓN solo puede usar flujos de simulación")
             if mode == AutomationMode.AUTHORIZED_PRODUCTION:
                 # La parte del servidor (mode=production) se comprueba por tarea.
                 check_mode_allowed(self.workflow, mode.value, backend_production_authorized=True)
+                check_mode_allowed(self.friend_workflow, mode.value, backend_production_authorized=True)
         except (WorkflowNotReady, ValueError) as exc:
             self.db.add_event("ERROR", "workflow", f"Flujo no disponible: {exc}")
             raise
 
     @property
     def real_workflow(self) -> WorkflowDef | None:
-        """Flujo para tareas NO simuladas (nunca un flujo de simulación)."""
+        """Flujo de regalo para tareas NO simuladas (nunca un flujo de simulación)."""
         return self.workflow if self.workflow is not None and not self.workflow.simulation else None
+
+    def workflow_for(self, phase: str, simulated: bool) -> WorkflowDef | None:
+        if simulated:
+            return self.sim_friend_workflow if phase == "friend_request" else self.sim_workflow
+        wf = self.friend_workflow if phase == "friend_request" else self.workflow
+        return wf if wf is not None and not wf.simulation else None
 
     def _api_ok(self) -> None:
         self.health.api_online, self.health.api_last_ok, self.health.api_error = True, time.time(), None
@@ -293,7 +312,8 @@ class AgentService:
 
     async def send_heartbeat(self) -> None:
         try:
-            await self.api.heartbeat()
+            await self.api.heartbeat(self.diamond_balance)
+            self._balance_dirty = False
             self._api_ok()
             self.health.server_checked_at = time.monotonic()
             if self.state == AgentState.AUTH_ERROR:
@@ -384,16 +404,17 @@ class AgentService:
         allowed = COMPATIBLE_SERVER_MODES[self.settings.automation_mode]
         if srv.mode not in allowed:
             return False, f"modo del servidor '{srv.mode}' no permitido por el modo local {self.settings.automation_mode.value}"
-        if srv.mode != "simulation" and self.real_workflow is None:
-            return False, (f"el servidor está en '{srv.mode}' pero no hay un flujo real validado "
-                           "(solo se ejecutan tareas simuladas)")
+        if srv.mode != "simulation" and (self.workflow_for("gift", False) is None
+                                         or self.workflow_for("friend_request", False) is None):
+            return False, (f"el servidor está en '{srv.mode}' pero no hay flujos reales validados de amistad y "
+                           "regalo (solo se ejecutan tareas simuladas)")
         return True, ""
 
     async def work_once(self) -> bool:
         """Un ciclo: verificar entorno, reclamar una tarea y ejecutarla. Devuelve True si procesó una."""
-        stale = (self.health.server_checked_at is None
+        stale = (self.health.server_checked_at is None or self._balance_dirty
                  or time.monotonic() - self.health.server_checked_at > self.settings.heartbeat_interval_seconds * 2)
-        if stale:
+        if stale:  # también tras leer un saldo nuevo: Horizons decide con él qué regalos entregar
             await self.send_heartbeat()
             if self.state == AgentState.AUTH_ERROR:
                 return False
@@ -424,6 +445,14 @@ class AgentService:
         if job is None and self.api.state.last_reason == "spend_limit_reached":
             self.set_state(AgentState.BUDGET_EXHAUSTED, "límite de gasto alcanzado en DiamantesExpress")
             return False
+        if job is None and self.api.state.last_reason == "insufficient_balance":
+            srv = self.api.state
+            reason = (f"saldo de diamantes insuficiente: se necesitan {srv.balance_needed}, "
+                      f"saldo {srv.server_diamond_balance if srv.server_diamond_balance is not None else self.diamond_balance}")
+            self.set_state(AgentState.SERVER_HOLD, reason)
+            self.db.add_alert(f"insufficient_balance:{int(time.time() // 3600)}", "CRITICAL", "INSUFFICIENT_BALANCE",
+                              f"Recargue diamantes en la cuenta emisora: {reason}")
+            return False
         if self.state in (AgentState.DEGRADED, AgentState.BUDGET_EXHAUSTED, AgentState.STARTING,
                           AgentState.SERVER_HOLD):
             self.set_state(AgentState.RUNNING)
@@ -437,10 +466,10 @@ class AgentService:
         local = self.settings.automation_mode
         if job.simulated:
             mode = "SUPERVISED" if local == AutomationMode.SUPERVISED else "SIMULATION"
-            return self.sim_workflow, mode, ""
-        wf = self.real_workflow
+            return self.workflow_for(job.phase, True), mode, ""
+        wf = self.workflow_for(job.phase, False)
         if wf is None:
-            return None, "", "tarea real sin flujo real validado"
+            return None, "", f"tarea real ({job.phase}) sin flujo real validado"
         if job.server_mode == "supervised":
             return wf, "SUPERVISED", ""
         if job.server_mode == "production":
@@ -492,6 +521,13 @@ class AgentService:
             keeper.cancel()
             await asyncio.gather(keeper, return_exceptions=True)
         self.queue.finish(job, outcome, workflow.id, mode)
+        if outcome.balance is not None and outcome.balance != self.diamond_balance:
+            self.diamond_balance = outcome.balance
+            self._balance_dirty = True
+            threshold = self.api.state.balance_threshold
+            if threshold is not None and outcome.balance < threshold:
+                self.db.add_alert(f"low_balance:{int(time.time() // 3600)}", "WARNING", "LOW_BALANCE",
+                                  f"Saldo de diamantes bajo: {outcome.balance} (umbral {threshold})")
         if outcome.status == JobStatus.NEEDS_REVIEW or outcome.error_code == "SCREEN_UNRECOGNIZED":
             self.db.add_alert(f"{outcome.error_code}:{job.job_id}:{job.attempt}",
                               "CRITICAL" if outcome.status == JobStatus.NEEDS_REVIEW else "WARNING",

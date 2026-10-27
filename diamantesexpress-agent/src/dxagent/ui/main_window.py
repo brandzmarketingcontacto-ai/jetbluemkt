@@ -27,7 +27,7 @@ from dxagent.engine.approval import ApprovalManager
 from dxagent.settings import SettingsManager
 from dxagent.ui.data_worker import StatusPoller
 from dxagent.ui.settings_page import SettingsPage
-from dxagent.ui.theme import COLORS, JOB_LABELS, QSS, STATE_COLORS, STATE_LABELS
+from dxagent.ui.theme import COLORS, JOB_LABELS, PHASE_LABELS, QSS, STATE_COLORS, STATE_LABELS
 from dxagent.winplatform import executable_command, spawn_detached
 
 
@@ -191,8 +191,8 @@ class MainWindow(QMainWindow):
         lay.setSpacing(12)
         metrics = QGridLayout()
         metrics.setSpacing(12)
-        titles = ["Procesados hoy", "Modo del servidor", "Fallidos / revisión", "Tiempo promedio",
-                  "Tokens IA hoy", "Costo IA hoy (USD)"]
+        titles = ["Procesados hoy", "Modo del servidor", "Fallidos / revisión", "Saldo de diamantes",
+                  "Tiempo promedio", "Tokens IA hoy", "Costo IA hoy (USD)"]
         self.metrics = [MetricCard(t) for t in titles]
         for i, m in enumerate(self.metrics):
             metrics.addWidget(m, 0, i)
@@ -283,8 +283,8 @@ class MainWindow(QMainWindow):
         page = QWidget()
         lay = QVBoxLayout(page)
         lay.setContentsMargins(0, 8, 0, 0)
-        self.history = self._table(["Pedido", "Trabajo", "Hora", "Estado", "Código", "Tokens", "Costo USD",
-                                    "Duración", "Aprobado por"])
+        self.history = self._table(["Pedido", "Trabajo", "Fase", "Cantidad", "Hora", "Estado", "Código",
+                                    "Amistad", "Tokens", "Costo USD", "Duración", "Aprobado por"])
         lay.addWidget(self.history)
         return page
 
@@ -438,8 +438,11 @@ class MainWindow(QMainWindow):
         server_txt = "—"
         if server.get("mode"):
             server_txt = server["mode"] + (" · pausa" if server.get("paused") else "")
+        balance = agent.get("diamond_balance") if snap["service_alive"] else None
+        sender = (agent.get("sender_account") or {}) if snap["service_alive"] else {}
+        self.metrics[3].setToolTip(f"Cuenta emisora: {sender.get('name') or '—'} (ID {sender.get('id') or '—'})")
         values = [jt["completed"], server_txt, f"{jt['failed']} / {jt['needs_review']}",
-                  fmt_duration(jt["avg_duration_s"]), f"{int(ut.get('total_tokens') or 0):,}",
+                  "—" if balance is None else f"{int(balance):,}", fmt_duration(jt["avg_duration_s"]), f"{int(ut.get('total_tokens') or 0):,}",
                   f"{float(ut.get('cost_usd') or 0):.4f}"]
         for metric, value in zip(self.metrics, values):
             metric.value.setText(str(value))
@@ -488,8 +491,11 @@ class MainWindow(QMainWindow):
         summary = json.loads(first["summary_json"])
         self.approval_text.setText(
             f"Pedido <b>{summary.get('order_id')}</b><br>Destinatario: <b>{summary.get('recipient')}</b><br>"
-            f"Producto: <b>{summary.get('product_label')}</b> ({summary.get('product_code')})<br>"
-            f"Datos leídos en pantalla: {summary.get('fields')}")
+            + ("Acción: <b>enviar solicitud de amistad</b><br>" if summary.get("phase") == "friend_request" else
+               f"Producto: <b>{summary.get('product_label')}</b> ({summary.get('product_code')})<br>"
+               f"Cantidad: <b>{summary.get('quantity')}</b> · costo {summary.get('total_cost') or '—'} diamantes"
+               f" · envío {summary.get('chunk')}<br>")
+            + f"Datos leídos en pantalla: {summary.get('fields')}")
         self.approval_box.setVisible(True)
         if self.tray:
             self.tray.showMessage(APP_NAME, f"Aprobación requerida para {summary.get('order_id')}")
@@ -497,9 +503,12 @@ class MainWindow(QMainWindow):
     def _fill_history(self, jobs: list[dict]) -> None:
         self.history.setRowCount(len(jobs))
         for r, job in enumerate(jobs):
-            values = [job["order_id"], job["job_id"], fmt_time(job["claimed_at"]),
+            phase = job.get("phase") or "gift"
+            qty = "" if phase == "friend_request" else \
+                f"{job.get('delivered_quantity') if job.get('delivered_quantity') is not None else '—'}/{job.get('quantity') or 1}"
+            values = [job["order_id"], job["job_id"], PHASE_LABELS.get(phase, phase), qty, fmt_time(job["claimed_at"]),
                       JOB_LABELS.get(job["status"], job["status"]), job.get("error_code") or "",
-                      str(job.get("tokens_total") or 0), f"{float(job.get('cost_usd') or 0):.5f}",
+                      job.get("friend_status") or "", str(job.get("tokens_total") or 0), f"{float(job.get('cost_usd') or 0):.5f}",
                       fmt_duration(job.get("duration_s")), job.get("approved_by") or ""]
             for c, v in enumerate(values):
                 self.history.setItem(r, c, QTableWidgetItem(v))

@@ -64,9 +64,8 @@ async def test_invalid_task_rejected_by_rules(agent_factory, backend, device, db
 async def test_data_mismatch_blocks_commit(agent_factory, backend, device, db):
     agent = agent_factory()
     await agent.startup()
-    # Configuración errónea: el código pide Pase Booyah pero la etiqueta apunta a otro producto.
-    agent.sim_workflow.order_rules.products["pase_booyah"] = "310 Diamantes"
-    backend.add_task(task_id="task_mm")
+    # Catálogo erróneo en Horizons: el kind es Pase Booyah pero gameItemName apunta a otro objeto del juego.
+    backend.add_task(task_id="task_mm", gameItemName="310 Diamantes")
     await agent.work_once()
     row = db.get_job("task_mm")
     assert row["error_code"] == "DATA_MISMATCH"
@@ -107,5 +106,5 @@ async def test_supervised_server_without_real_workflow_does_not_claim(agent_fact
     agent = agent_factory(settings=make_settings(automation_mode=AutomationMode.SUPERVISED))
     await agent.startup()
     assert await agent.work_once() is False
-    assert "flujo real" in agent.state_reason
+    assert "flujos reales" in agent.state_reason
     assert backend.tasks["task_real"]["status"] == "pending"  # nunca se ejecuta un pedido real con la app ficticia

@@ -27,6 +27,10 @@ REQUIRED_OPERATIONS: dict[str, tuple[str, str]] = {
     "reportProgress": ("POST", "/agent/tasks/{id}/progress"),
     "reportResult": ("POST", "/agent/tasks/{id}/result"),
 }
+# v1.1 (opcionales: con un contrato v1.0 el agente sigue funcionando sin estas capacidades).
+OPTIONAL_OPERATIONS: dict[str, tuple[str, str]] = {
+    "deferTask": ("POST", "/agent/tasks/{id}/defer"),
+}
 
 
 @dataclass(frozen=True)
@@ -75,7 +79,16 @@ class ApiContract:
                 missing.append(f"{method} {route}")
         if missing:
             raise ContractError("El contrato no define las rutas: " + ", ".join(missing))
+        for name, (method, route) in OPTIONAL_OPERATIONS.items():
+            if name in (overrides or {}):
+                o_method, _, o_route = overrides[name].strip().partition(" ")
+                operations[name] = Operation(name, o_method.upper(), o_route.strip())
+            elif (method, route) in available:
+                operations[name] = Operation(name, method, route)
         return cls(operations, str(file), str((spec.get("info") or {}).get("version", "")))
+
+    def supports(self, name: str) -> bool:
+        return name in self.operations
 
     def get(self, name: str) -> Operation:
         try:

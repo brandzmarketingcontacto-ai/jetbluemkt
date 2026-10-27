@@ -25,6 +25,7 @@ import os
 import sys
 import tempfile
 import time
+from datetime import timedelta
 from pathlib import Path
 
 
@@ -87,7 +88,7 @@ def cmd_simulate(args) -> int:
     from dxagent.api.client import HorizonsApiClient
     from dxagent.api.contract import ApiContract
     from dxagent.api.mock_backend import MockHorizonsBackend
-    from dxagent.android.mock_device import SIM_PRODUCTS, MockDevice
+    from dxagent.android.mock_device import MockDevice
     from dxagent.database import LocalDatabase
     from dxagent.logging_setup import setup_logging
     from dxagent.service.agent import AgentService
@@ -95,11 +96,16 @@ def cmd_simulate(args) -> int:
 
     setup_logging(paths.logs_dir(), "simulate", logging.WARNING)
     backend = MockHorizonsBackend(mode="simulation")
+    # Pedidos v1.1 de dos fases (amistad + regalo). Las cantidades altas se dividen por maxPerTransaction.
+    kinds = list(backend.catalog)
+    expected: dict[str, int] = {}
     for i in range(args.orders):
-        code, name = SIM_PRODUCTS[i % len(SIM_PRODUCTS)]
-        backend.add_task(task_id=f"sim_{i:04d}", order_code=f"DX-SIM-{i:04d}", player_id=str(100000000 + i),
-                         kind=code, product_name=name)
-    device = MockDevice()
+        kind = kinds[i % len(kinds)]
+        quantity = 1 if kind == "pase_booyah" else (100 if i % 3 == 1 else 1 + i % 40)
+        backend.add_order(f"DX-SIM-{i:04d}", str(100000000 + i), kind, quantity)
+        expected[f"DX-SIM-{i:04d}"] = quantity
+    # Algunos clientes ya eran amigos; el resto acepta la solicitud tras el primer reintento.
+    device = MockDevice(require_friendship=True, friends={str(100000000 + i) for i in range(0, args.orders, 4)})
     db = LocalDatabase(paths.db_path())
     settings = AgentSettings(api_url="https://mock.local/hcgi/api", agent_name="simulador",
                              automation_mode=AutomationMode.SIMULATION, vision_backend="disabled",
@@ -112,40 +118,54 @@ def cmd_simulate(args) -> int:
 
     agent = AgentService(settings, db, SecretStore(env={}, use_keyring=False), api=api, device_factory=factory,
                          engine_overrides={"settle_s": 0.0, "poll_interval_s": 0.01, "screen_wait_timeout_s": 2.0})
+    clock_offset = [0.0]
+    real_clock = backend.clock
+    backend.clock = lambda: real_clock() + timedelta(minutes=clock_offset[0])
 
     async def run():
         await agent.startup()
         count = 0
         started = time.monotonic()
-        while await agent.work_once():
-            count += 1
-            if count % 10 == 0:
-                print(f"  {count}/{args.orders} pedidos procesados…")
+        for round_ in range(4):  # cada ronda simula que pasa friendRetryMinutes
+            while await agent.work_once():
+                await agent.sync.flush_all()
+                count += 1
+                if count % 10 == 0:
+                    print(f"  {count} tareas procesadas…")
+            if round_ > 0:  # el cliente tarda: el primer reintento se aplaza con /defer
+                device.accept_pending_requests()
+            clock_offset[0] += backend.friend_retry_minutes + 1
         await agent.sync.flush_all()
         await agent.api.aclose()
         return count, time.monotonic() - started
 
     count, elapsed = asyncio.run(run())
     stats = db.job_stats_today()
-    result = {"directorio": str(home), "procesados": count, "segundos": round(elapsed, 2), **stats,
-              "entregas_ficticias": len(device.transactions),
-              "duplicados": len(device.transactions) - len({(t.player_id, t.product_code) for t in device.transactions}),
-              "reportados_al_backend": len(backend.results),
+    delivered = {code: backend.order_delivered(code) for code in expected}
+    refs = [t.ref for t in device.transactions]
+    result = {"directorio": str(home), "pedidos": args.orders, "tareas_procesadas": count,
+              "segundos": round(elapsed, 2), **stats,
+              "unidades_pedidas": sum(expected.values()), "unidades_entregadas": sum(delivered.values()),
+              "pedidos_incompletos": [c for c, q in expected.items() if delivered[c] != q],
+              "aplazamientos": len(backend.defers), "entregas_ficticias": len(device.transactions),
+              "duplicados": len(refs) - len(set(refs)),
               "estados_en_servidor": {st: sum(1 for t in backend.tasks.values() if t["status"] == st)
-                                      for st in {t["status"] for t in backend.tasks.values()}}, "outbox_pendiente": db.outbox_pending_count()}
+                                      for st in {t["status"] for t in backend.tasks.values()}},
+              "outbox_pendiente": db.outbox_pending_count()}
     _print(result)
-    ok = stats["completed"] == args.orders and result["duplicados"] == 0 and result["outbox_pendiente"] == 0
+    ok = not result["pedidos_incompletos"] and result["duplicados"] == 0 and result["outbox_pendiente"] == 0
     return 0 if ok else 1
 
 
 def cmd_mock_backend(args) -> int:
     from dxagent.api.mock_backend import MockHorizonsBackend
-    from dxagent.android.mock_device import SIM_PRODUCTS
 
     backend = MockHorizonsBackend(token=args.token, mode=args.mode)
+    backend.friend_retry_minutes = args.friend_retry_minutes
+    kinds = list(backend.catalog)
     for i in range(args.jobs):
-        code, name = SIM_PRODUCTS[i % len(SIM_PRODUCTS)]
-        backend.add_task(player_id=str(200000000 + i), kind=code, product_name=name)
+        kind = kinds[i % len(kinds)]
+        backend.add_order(f"DX-MOCK-{i:04d}", str(200000000 + i), kind, 1 if kind == "pase_booyah" else 100)
     server = backend.serve("127.0.0.1", args.port)
     print(f"Backend simulado (contrato real) en http://127.0.0.1:{args.port}/hcgi/api  modo={args.mode}")
     print(f"  DX_AGENT_TOKEN={args.token}")
@@ -299,8 +319,9 @@ def build_parser() -> argparse.ArgumentParser:
     sim.add_argument("--home", default="")
     mb = sub.add_parser("mock-backend", help="Backend simulado local")
     mb.add_argument("--port", type=int, default=8787)
-    mb.add_argument("--jobs", type=int, default=10)
+    mb.add_argument("--jobs", type=int, default=10, help="Pedidos de dos fases a crear")
     mb.add_argument("--token", default="dxa_test_token_123456")
+    mb.add_argument("--friend-retry-minutes", type=int, default=1)
     mb.add_argument("--mode", default="simulation", choices=["off", "simulation", "supervised", "production"])
     sub.add_parser("check-api", help="Heartbeat real contra DiamantesExpress (no reclama tareas)")
     sec = sub.add_parser("set-secret", help="Guardar un secreto")

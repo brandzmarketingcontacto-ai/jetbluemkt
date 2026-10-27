@@ -204,13 +204,15 @@ class SettingsPage(QScrollArea):
             self.mode.addItem(text, mode.value)
         self.mode.setCurrentIndex(list(MODE_LABELS).index(s.automation_mode))
         self.workflow = QLineEdit(s.workflow_id)
+        self.friend_workflow = QLineEdit(s.friend_workflow_id)
         self.max_actions = ispin(s.max_actions_per_order, 1000)
         self.max_duration = dspin(s.max_order_duration_seconds, 7200, 0, 30)
         self.retries = ispin(s.max_step_retries, 10)
         self.consecutive = ispin(s.max_consecutive_errors, 50)
         self.approval_timeout = dspin(s.approval_timeout_seconds, 86400, 0, 60)
         f.addRow("Modo", self.mode)
-        f.addRow("Flujo", self.workflow)
+        f.addRow("Flujo de regalo", self.workflow)
+        f.addRow("Flujo de solicitud de amistad", self.friend_workflow)
         f.addRow("Acciones máx. por pedido", self.max_actions)
         f.addRow("Duración máx. por pedido (s)", self.max_duration)
         f.addRow("Reintentos por paso", self.retries)
@@ -267,7 +269,7 @@ class SettingsPage(QScrollArea):
             max_ai_cost_per_order_usd=self.max_cost.value(), daily_ai_budget_usd=self.daily_budget.value(),
             max_ai_requests_per_order=self.max_requests.value(), ai_min_confidence=self.min_conf.value(),
             verify_result_with_ai=self.verify_ai.isChecked(), automation_mode=self.mode.currentData(),
-            workflow_id=self.workflow.text().strip(), max_actions_per_order=self.max_actions.value(),
+            workflow_id=self.workflow.text().strip(), friend_workflow_id=self.friend_workflow.text().strip(), max_actions_per_order=self.max_actions.value(),
             max_order_duration_seconds=self.max_duration.value(), max_step_retries=self.retries.value(),
             max_consecutive_errors=self.consecutive.value(), approval_timeout_seconds=self.approval_timeout.value(),
             autostart=self.autostart.isChecked(), prevent_sleep=self.prevent_sleep.isChecked(),

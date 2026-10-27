@@ -4,6 +4,7 @@ id: simulation_gift
 version: 1
 description: Entrega de regalo en la aplicación de simulación
 simulation: true
+phase: gift
 allowed_modes: [SIMULATION, SUPERVISED]
 
 app:
@@ -12,8 +13,13 @@ app:
 
 order_rules:
   player_id_pattern: '^[0-9]{5,15}$'
-  products:            # kind/código de la tarea -> etiqueta visible en la app de simulación
-    pase_booyah: "Pase Booyah"
+  # Con accept_server_catalog se usa el gameItemName del catálogo de Horizons (agent_products).
+  accept_server_catalog: true
+  default_category: pase   # tareas v1.0 sin categoría
+  products:            # kind -> texto visible (para tareas sin gameItemName)
+    pase_booyah: "Pase Booyah Premium"
+    caja_tokens_evo_universales: "Caja de Tokens evo universales"
+    token_escorpion: "Token Escorpion"
     DIAMANTES_100: "100 Diamantes"
     DIAMANTES_310: "310 Diamantes"
     DIAMANTES_520: "520 Diamantes"
@@ -24,40 +30,50 @@ calibration:
 
 screens:
   home:
-    description: Pantalla inicial del simulador con el botón "Enviar regalo"
+    description: Pantalla inicial del simulador con los botones "Enviar regalo" y "Agregar amigo"
     markers: [{resource_id: btn_start}]
   recipient:
     description: Formulario para ingresar el ID del jugador destinatario
     markers: [{resource_id: field_player_id}]
   gift_select:
-    description: Lista de regalos disponibles para el destinatario
+    description: Pestañas PASE/CAJA/TOKEN y lista de regalos para el destinatario
     markers: [{resource_id: tv_recipient}]
   confirm:
-    description: Resumen previo al envío con botones Confirmar y Cancelar
+    description: Confirmar regalo con destinatario, producto, cantidad (- / +), costo y botón Confirmar
     markers: [{resource_id: btn_confirm}]
   processing:
     description: Indicador "Procesando..." sin resultado final
     markers: [{resource_id: tv_processing}]
   result_success:
-    description: Resultado "Regalo enviado" con destinatario, producto y referencia
+    description: Resultado "Regalo enviado" con destinatario, producto, cantidad y referencia
     markers: [{resource_id: tv_result_title, text: "Regalo enviado"}]
   result_failure:
-    description: Resultado "Envío rechazado"
+    description: Resultado "Envío rechazado" con el motivo (p. ej. diamantes insuficientes)
     markers: [{resource_id: tv_result_title, text: "Envío rechazado"}]
 
 elements:
   btn_start: {resource_id: btn_start, description: 'Botón "Enviar regalo"'}
   field_player_id: {resource_id: field_player_id, description: Campo de texto del ID de jugador}
   btn_search: {resource_id: btn_search, description: 'Botón "Buscar jugador"'}
+  tab_pase: {resource_id: tab_pase, description: Pestaña de pases}
+  tab_caja: {resource_id: tab_caja, description: Pestaña de cajas}
+  tab_token: {resource_id: tab_token, description: Pestaña de tokens y fragmentos}
+  btn_qty_plus: {resource_id: btn_qty_plus, description: 'Botón "+" de la cantidad'}
+  btn_qty_minus: {resource_id: btn_qty_minus, description: 'Botón "-" de la cantidad'}
   btn_confirm: {resource_id: btn_confirm, description: 'Botón "Confirmar envío"'}
   btn_done: {resource_id: btn_done, description: 'Botón "Finalizar"'}
-  tv_error: {resource_id: tv_error, description: Mensaje de error del formulario}
+  tv_error: {resource_id: tv_error, description: Mensaje "Jugador no encontrado"}
+  tv_not_friend: {resource_id: tv_not_friend, description: Mensaje "Este jugador no es tu amigo"}
 
 fields:
+  balance: {resource_id: tv_balance, description: Saldo de diamantes de la cuenta emisora}
   confirm_recipient: {resource_id: tv_confirm_recipient, description: ID del destinatario en el resumen}
   confirm_product_code: {resource_id: tv_confirm_product_code, description: Código del producto en el resumen}
+  confirm_quantity: {resource_id: tv_quantity, description: Cantidad a regalar}
+  confirm_total_cost: {resource_id: tv_total_cost, description: Costo total en diamantes}
   result_recipient: {resource_id: tv_result_recipient, description: ID del destinatario en el resultado}
   result_product_code: {resource_id: tv_result_product_code, description: Código del producto en el resultado}
+  result_quantity: {resource_id: tv_result_quantity, description: Cantidad entregada en el resultado}
   result_ref: {resource_id: tv_result_ref, description: Referencia de la operación}
 
 steps:
@@ -66,15 +82,27 @@ steps:
   - {id: start, kind: tap, element: btn_start, expect: recipient}
   - {id: focus_player, kind: tap, element: field_player_id}
   - {id: type_player, kind: input_text, value: "{recipient.player_id}"}
-  - {id: search_player, kind: tap, element: btn_search, expect: gift_select,
-     fail_if_visible: {element: tv_error, code: RECIPIENT_NOT_FOUND}}
+  - id: search_player
+    kind: tap
+    element: btn_search
+    expect: gift_select
+    exits:
+      - {element: tv_error, outcome: failed, code: RECIPIENT_NOT_FOUND, message: "El jugador no existe"}
+      - {element: tv_not_friend, outcome: defer, reason: not_friend_yet, code: NOT_FRIEND_YET,
+         message: "El jugador todavía no aceptó la solicitud de amistad"}
+  - {id: choose_tab, kind: tap, element: "tab_{product.category}"}
   - {id: select_product, kind: tap_option, label: "{product.label}", expect: confirm}
+  - {id: set_quantity, kind: set_quantity, plus: btn_qty_plus, minus: btn_qty_minus, field: confirm_quantity,
+     value: "{product.quantity}"}
+  - {id: read_balance, kind: read_balance, field: balance}
   - id: verify_summary
     kind: verify_fields
     screen: confirm
     checks:
       confirm_recipient: "{recipient.player_id}"
       confirm_product_code: "{product.code}"
+      confirm_quantity: "{product.quantity}"
+      confirm_total_cost: "{product.total_cost}"
   - {id: send, kind: commit, element: btn_confirm, result_screens: [result_success, result_failure, processing]}
   - id: verify_result
     kind: verify_result
@@ -84,5 +112,7 @@ steps:
     checks:
       result_recipient: "{recipient.player_id}"
       result_product_code: "{product.code}"
+      result_quantity: "{product.quantity}"
     reference_field: result_ref
+  - {id: balance_after, kind: read_balance, field: balance, optional: true}
   - {id: finish, kind: tap, element: btn_done, expect: home, optional: true}

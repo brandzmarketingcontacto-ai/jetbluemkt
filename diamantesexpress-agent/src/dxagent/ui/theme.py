@@ -26,10 +26,13 @@ STATE_LABELS = {
     "SERVER_HOLD": "En espera del servidor",
 }
 
+PHASE_LABELS = {"friend_request": "Amistad", "gift": "Regalo"}
+
 JOB_LABELS = {
     "claimed": "Reclamado", "running": "En proceso", "awaiting_approval": "Esperando aprobación",
     "committing": "Enviando", "verifying": "Verificando", "completed": "Completado", "failed": "Fallido",
     "needs_review": "Revisión manual", "released": "Devuelto",
+    "deferred": "Aplazado (esperando amistad)",
 }
 
 QSS = f"""

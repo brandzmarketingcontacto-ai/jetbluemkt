@@ -1,0 +1,72 @@
+# Fase A (friend_request) sobre la aplicación FICTICIA "DX Gift Simulator" (android-sim/).
+# Envía una solicitud de amistad al ID del cliente. No toca el juego real.
+id: simulation_friend
+version: 1
+description: Solicitud de amistad en la aplicación de simulación
+simulation: true
+phase: friend_request
+allowed_modes: [SIMULATION, SUPERVISED]
+
+app:
+  package: com.diamantesexpress.giftsim
+  activity: .MainActivity
+
+order_rules:
+  player_id_pattern: '^[0-9]{5,15}$'
+
+screens:
+  home:
+    description: Pantalla inicial del simulador con los botones "Enviar regalo" y "Agregar amigo"
+    markers: [{resource_id: btn_start}]
+  add_friend:
+    description: Buscador de jugadores por ID para agregar amigo
+    markers: [{resource_id: field_friend_id}]
+  friend_profile:
+    description: Perfil del jugador encontrado con el botón "Enviar solicitud" o el aviso "Ya son amigos"
+    markers: [{resource_id: tv_profile_id}]
+  friend_request_sent:
+    description: Confirmación "Solicitud enviada"
+    markers: [{resource_id: tv_request_sent}]
+
+elements:
+  btn_add_friend: {resource_id: btn_add_friend, description: 'Botón "Agregar amigo"'}
+  field_friend_id: {resource_id: field_friend_id, description: Campo del ID del jugador a buscar}
+  btn_friend_search: {resource_id: btn_friend_search, description: 'Botón "Buscar"'}
+  btn_send_request: {resource_id: btn_send_request, description: 'Botón "Enviar solicitud"'}
+  btn_done: {resource_id: btn_done, description: 'Botón "Finalizar"'}
+  tv_error: {resource_id: tv_error, description: Mensaje "Jugador no encontrado"}
+  tv_already_friends: {resource_id: tv_already_friends, description: Aviso "Ya son amigos"}
+
+fields:
+  profile_id: {resource_id: tv_profile_id, description: ID del jugador mostrado en el perfil}
+  request_target: {resource_id: tv_request_target, description: ID al que se envió la solicitud}
+
+steps:
+  - {id: open_app, kind: launch_app}
+  - {id: reset_to_home, kind: navigate_to, screen: home, via_back: 4}
+  - {id: open_add_friend, kind: tap, element: btn_add_friend, expect: add_friend}
+  - {id: focus_id, kind: tap, element: field_friend_id}
+  - {id: type_id, kind: input_text, value: "{recipient.player_id}"}
+  - id: search
+    kind: tap
+    element: btn_friend_search
+    expect: friend_profile
+    exits:
+      - {element: tv_error, outcome: completed, friend_status: player_not_found, code: PLAYER_NOT_FOUND,
+         message: "El ID del jugador no existe"}
+  - id: verify_profile
+    kind: verify_fields
+    screen: friend_profile
+    checks:
+      profile_id: "{recipient.player_id}"
+    exits:
+      - {element: tv_already_friends, outcome: completed, friend_status: already_friends,
+         message: "Ya son amigos"}
+  - {id: send_request, kind: commit, element: btn_send_request, result_screens: [friend_request_sent]}
+  - id: verify_request
+    kind: verify_result
+    success_screen: friend_request_sent
+    success_data: {friend_status: request_sent}
+    checks:
+      request_target: "{recipient.player_id}"
+  - {id: finish, kind: tap, element: btn_done, expect: home, optional: true}

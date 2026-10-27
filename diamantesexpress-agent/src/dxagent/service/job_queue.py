@@ -90,20 +90,24 @@ class JobQueueManager:
                 self.db.add_event("WARNING", "job", f"La tarea {job.order_id} volvió a entregarse; se reenvía su "
                                                     "resultado sin repetir la operación", job.job_id)
                 return None
-            # RELEASED (no se ejecutó nada) o un reintento manual del SUPER_ADMIN tras un resultado ya recibido.
+            # RELEASED/DEFERRED (no se ejecutó nada: lease vencido o amistad pendiente) o un reintento manual del
+            # SUPER_ADMIN tras un resultado ya recibido.
             self.db.reclaim_job(job.job_id, payload)
         else:
-            if self.db.order_active_or_done(job.order_id):
-                # Horizons garantiza una tarea por pedido; si aun así llega otra, un humano decide.
-                self.db.insert_job(job.job_id, job.order_id, payload, self.instance, self.account_key)
+            if self.db.order_active_or_done(job.dedupe_key):
+                # Horizons garantiza una tarea por pedido, fase y chunk; si aun así llega otra, un humano decide.
+                self.db.insert_job(job.job_id, job.order_id, payload, self.instance, self.account_key,
+                                   order_key=f"{job.dedupe_key}:dup:{job.job_id}", phase=job.phase,
+                                   quantity=job.product.quantity)
                 self.finish(job, JobOutcome(job_id=job.job_id, order_id=job.order_id, status=JobStatus.NEEDS_REVIEW,
                                             error_code="DUPLICATE_ORDER", pre_commit=True,
-                                            message="Otra tarea del mismo pedido ya fue procesada o está en curso; "
-                                                    "no se ejecutó ninguna acción"))
+                                            message="Otra tarea del mismo pedido, fase y parte ya fue procesada o está "
+                                                    "en curso; no se ejecutó ninguna acción"))
                 self.db.add_alert(f"dup_order:{job.job_id}", "WARNING", "DUPLICATE_ORDER",
                                   f"El pedido {job.order_id} ya tenía otra tarea; {job.job_id} pasa a revisión")
                 return None
-            self.db.insert_job(job.job_id, job.order_id, payload, self.instance, self.account_key)
+            self.db.insert_job(job.job_id, job.order_id, payload, self.instance, self.account_key,
+                               order_key=job.dedupe_key, phase=job.phase, quantity=job.product.quantity)
         if not all(self.db.acquire_lock(k, job.job_id) for k in self._lock_keys()):
             self.db.release_locks(job.job_id)
             self.db.update_job(job.job_id, status=JobStatus.RELEASED, error_code="RESOURCE_BUSY")
@@ -112,7 +116,9 @@ class JobQueueManager:
             self.db.audit.append("claim", job_id=job.job_id, order=job.order_id, attempt=job.attempt,
                                  simulated=job.simulated, server_mode=job.server_mode)
         mode_txt = "SIMULADA" if job.simulated else job.server_mode
-        self.db.add_event("INFO", "job", f"Tarea {job.order_id} reclamada ({mode_txt}, intento {job.attempt})",
+        what = ("solicitud de amistad" if job.phase == "friend_request" else
+                f"regalo {job.product.quantity} × {job.product.name} (parte {job.chunk_index + 1}/{job.chunk_count})")
+        self.db.add_event("INFO", "job", f"Tarea {job.order_id} reclamada: {what} ({mode_txt}, intento {job.attempt})",
                           job.job_id)
         return job
 
@@ -143,6 +149,16 @@ class JobQueueManager:
         }
         if outcome.status == JobStatus.COMPLETED and details.get("reference"):
             body["giftCode"] = str(details["reference"])[:120]
+        if job.phase == "friend_request":
+            if outcome.friend_status:
+                body["friendStatus"] = outcome.friend_status
+        elif outcome.status == JobStatus.COMPLETED:
+            # Horizons exige deliveredQuantity == quantity para aceptar completed en la fase gift.
+            body["deliveredQuantity"] = outcome.delivered_quantity if outcome.delivered_quantity is not None \
+                else job.product.quantity
+        elif outcome.status == JobStatus.FAILED:
+            body["deliveredQuantity"] = 0
+        # uncertain: no se informa cantidad (no se sabe); Horizons lo pasa a revisión manual.
         if outcome.error_code:
             body["errorCode"] = outcome.error_code[:60]
             body["errorMessage"] = (outcome.message or outcome.error_code)[:500]
@@ -157,16 +173,28 @@ class JobQueueManager:
         self.db.update_job(job.job_id, status=outcome.status, finished_at=iso_now(), error_code=outcome.error_code,
                            message=outcome.message, actions=outcome.actions, ai_requests=outcome.ai_requests,
                            tokens_total=outcome.tokens_total, cost_usd=outcome.cost_usd, duration_s=outcome.duration_s,
-                           approved_by=outcome.approved_by, result_json=outcome.model_dump_json())
+                           approved_by=outcome.approved_by, result_json=outcome.model_dump_json(),
+                           friend_status=outcome.friend_status, delivered_quantity=outcome.delivered_quantity)
+        if outcome.status == JobStatus.DEFERRED and not self.api.supports_defer:
+            # Contrato v1.0 sin /defer: se devuelve dejando vencer el lease.
+            outcome.status = JobStatus.RELEASED
+            self.db.update_job(job.job_id, status=JobStatus.RELEASED)
         if outcome.status == JobStatus.RELEASED:
             # Nada se ejecutó: no se reporta resultado; al vencer el lease Horizons reintenta (hasta maxAttempts).
             pass
+        elif outcome.status == JobStatus.DEFERRED:
+            # Nada se ejecutó: se aplaza (no consume maxAttempts) hasta el próximo reintento de amistad.
+            self.db.enqueue("defer", f"defer:{job.job_id}:{attempt}", {
+                "reason": outcome.defer_reason or "deferred",
+                "retryAfterSeconds": self.api.state.friend_retry_minutes * 60,
+                "message": outcome.message}, job.job_id)
         else:
             self._enqueue_result(job.job_id, attempt, self.build_result(job, outcome, workflow_id, engine_mode))
         if self.db.audit is not None:
             self.db.audit.append("finish", job_id=job.job_id, status=outcome.status.value, code=outcome.error_code,
                                  pre_commit=outcome.pre_commit, approved_by=outcome.approved_by)
-        level = {JobStatus.COMPLETED: "INFO", JobStatus.RELEASED: "WARNING"}.get(outcome.status, "ERROR")
+        level = {JobStatus.COMPLETED: "INFO", JobStatus.RELEASED: "WARNING",
+                 JobStatus.DEFERRED: "INFO"}.get(outcome.status, "ERROR")
         self.db.add_event(level, "job", f"Tarea {job.order_id}: {outcome.status.value} {outcome.error_code or ''} "
                                         f"{outcome.message}".strip(), job.job_id)
         self.db.release_locks(job.job_id)

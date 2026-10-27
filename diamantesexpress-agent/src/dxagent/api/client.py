@@ -49,6 +49,14 @@ class ServerState:
     server_time: str | None = None
     last_reason: str | None = None       # motivo del último claim sin tarea
     instructions: list[str] = field(default_factory=list)
+    # v1.1
+    friend_retry_minutes: int = 10
+    friend_wait_max_hours: int | None = None
+    sender_account_name: str | None = None
+    sender_account_id: str | None = None
+    balance_threshold: int | None = None
+    server_diamond_balance: int | None = None   # saldo que conoce el servidor
+    balance_needed: int | None = None           # claim con reason=insufficient_balance
 
     @property
     def dispatching(self) -> bool:
@@ -123,9 +131,11 @@ class HorizonsApiClient:
         return body
 
     # -------------------------------------------------------------- operaciones
-    async def heartbeat(self) -> ServerState:
-        body = await self._request("heartbeat", json_body={"hostname": self.agent_name,
-                                                           "appVersion": __version__[:40]})
+    async def heartbeat(self, diamond_balance: int | None = None) -> ServerState:
+        payload: dict[str, Any] = {"hostname": self.agent_name, "appVersion": __version__[:40]}
+        if diamond_balance is not None:
+            payload["diamondBalance"] = max(int(diamond_balance), 0)  # v1.1
+        body = await self._request("heartbeat", json_body=payload)
         st = self.state
         st.mode = body.get("mode", st.mode)
         st.paused = bool(body.get("paused", False))
@@ -135,6 +145,11 @@ class HorizonsApiClient:
         st.max_attempts = body.get("maxAttempts", st.max_attempts)
         st.poll_after_seconds = body.get("pollAfterSeconds", st.poll_after_seconds)
         st.server_time = body.get("serverTime")
+        st.friend_retry_minutes = int(body.get("friendRetryMinutes") or st.friend_retry_minutes)
+        st.friend_wait_max_hours = body.get("friendWaitMaxHours", st.friend_wait_max_hours)
+        st.sender_account_name = body.get("senderAccountName", st.sender_account_name)
+        st.sender_account_id = body.get("senderAccountId", st.sender_account_id)
+        st.balance_threshold = body.get("balanceThreshold", st.balance_threshold)
         return st
 
     async def claim_task(self) -> ClaimResult:
@@ -150,7 +165,23 @@ class HorizonsApiClient:
         self.state.instructions = result.instructions
         if result.reason == "paused":
             self.state.paused = True
+        if body.get("diamondBalance") is not None:
+            self.state.server_diamond_balance = body.get("diamondBalance")
+        self.state.balance_needed = body.get("needed") if result.reason == "insufficient_balance" else None
         return result
+
+    @property
+    def supports_defer(self) -> bool:
+        return self.contract.supports("deferTask")
+
+    async def defer_task(self, task_id: str, reason: str, retry_after_seconds: int | None = None,
+                         message: str = "", idem: str | None = None) -> dict:
+        """v1.1: la tarea vuelve a waiting_friend hasta notBefore. No consume maxAttempts."""
+        payload: dict[str, Any] = {"reason": reason[:80], "message": message[:1000]}
+        if retry_after_seconds is not None:
+            payload["retryAfterSeconds"] = min(max(int(retry_after_seconds), 30), 86400)
+        return await self._request("deferTask", path_params={"id": task_id}, json_body=payload,
+                                   idempotency_key=idem)
 
     async def current_tasks(self) -> list[dict[str, Any]]:
         body = await self._request("currentTasks")

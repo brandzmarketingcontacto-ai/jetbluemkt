@@ -14,7 +14,10 @@ from dxagent.models import Job
 
 PLACEHOLDER = "<VERIFICAR"
 StepKind = Literal["launch_app", "navigate_to", "wait_screen", "tap", "input_text", "tap_option",
-                   "verify_fields", "commit", "verify_result"]
+                   "verify_fields", "commit", "verify_result", "set_quantity", "read_balance"]
+Phase = Literal["friend_request", "gift"]
+ExitOutcome = Literal["completed", "failed", "defer"]
+FRIEND_STATUSES = {"request_sent", "already_friends", "player_not_found"}
 
 
 class WorkflowNotReady(Exception):
@@ -47,6 +50,21 @@ class ElementDef(BaseModel):
     calibrated: tuple[float, float] | None = None  # coordenadas normalizadas validadas
 
 
+class ExitDef(BaseModel):
+    """Salida anticipada (antes del envío) si un elemento aparece en pantalla.
+
+    Ejemplos: "jugador no encontrado" -> failed; "ya son amigos" -> completed con friend_status;
+    "aún no es tu amigo" -> defer (se aplaza la tarea con /defer).
+    """
+    model_config = ConfigDict(extra="forbid")
+    element: str
+    outcome: ExitOutcome
+    code: str | None = None
+    message: str = ""
+    friend_status: str | None = None
+    reason: str | None = None            # para defer, p. ej. not_friend_yet
+
+
 class StepDef(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
@@ -60,6 +78,11 @@ class StepDef(BaseModel):
     via_back: int = 0
     optional: bool = False
     fail_if_visible: dict[str, str] | None = None
+    exits: list[ExitDef] = Field(default_factory=list)
+    plus: str | None = None              # set_quantity: botón +
+    minus: str | None = None             # set_quantity: botón –
+    field: str | None = None             # set_quantity / read_balance: campo a leer
+    success_data: dict[str, str] = Field(default_factory=dict)   # verify_result: datos del éxito (friend_status)
     result_screens: list[str] = Field(default_factory=list)
     success_screen: str | None = None
     failure_screen: str | None = None
@@ -86,7 +109,11 @@ class CalibrationDef(BaseModel):
 
 class OrderRules(BaseModel):
     player_id_pattern: str
-    products: dict[str, str]
+    # kind -> texto visible. Con accept_server_catalog=true también se aceptan los productos del catálogo de
+    # Horizons (agent_products), usando su gameItemName exacto.
+    products: dict[str, str] = Field(default_factory=dict)
+    accept_server_catalog: bool = False
+    default_category: str = "pase"
 
 
 class WorkflowDef(BaseModel):
@@ -95,6 +122,7 @@ class WorkflowDef(BaseModel):
     version: int
     description: str = ""
     simulation: bool
+    phase: Phase = "gift"
     allowed_modes: list[str]
     authorization: AuthorizationDef = Field(default_factory=AuthorizationDef)
     app: AppDef
@@ -119,11 +147,20 @@ class WorkflowDef(BaseModel):
             for ref in (step.screen, step.expect, step.success_screen, step.failure_screen, *step.result_screens):
                 if ref and ref not in self.screens:
                     raise ValueError(f"Paso {step.id}: pantalla desconocida {ref}")
-            if step.element and step.element not in self.elements:
-                raise ValueError(f"Paso {step.id}: elemento desconocido {step.element}")
-            for field in step.checks:
+            for element in (step.element, step.plus, step.minus, *(e.element for e in step.exits)):
+                # Los nombres con plantilla (p. ej. tab_{product.category}) se validan al ejecutar.
+                if element and "{" not in element and element not in self.elements:
+                    raise ValueError(f"Paso {step.id}: elemento desconocido {element}")
+            for field in (*step.checks, *([step.field] if step.field else [])):
                 if field not in self.fields:
                     raise ValueError(f"Paso {step.id}: campo desconocido {field}")
+            for exit_def in step.exits:
+                if exit_def.friend_status and exit_def.friend_status not in FRIEND_STATUSES:
+                    raise ValueError(f"Paso {step.id}: friend_status inválido {exit_def.friend_status}")
+            if step.kind == "set_quantity" and not (step.plus and step.minus and step.field and step.value):
+                raise ValueError(f"Paso {step.id}: set_quantity requiere plus, minus, field y value")
+            if step.kind == "read_balance" and not step.field:
+                raise ValueError(f"Paso {step.id}: read_balance requiere field")
         return self
 
     def commit_step(self) -> StepDef:
@@ -175,19 +212,34 @@ def check_mode_allowed(workflow: WorkflowDef, mode: str, backend_production_auth
 
 
 def order_context(workflow: WorkflowDef, job: Job) -> dict[str, str]:
-    """Valida el pedido contra las reglas del flujo y devuelve las variables para las plantillas."""
+    """Valida la tarea contra las reglas del flujo y devuelve las variables para las plantillas."""
     rules = workflow.order_rules
+    if job.phase != workflow.phase:
+        raise OrderRejected("PHASE_MISMATCH", f"El flujo {workflow.id} es de la fase {workflow.phase}, "
+                                              f"la tarea es {job.phase}")
     if not re.fullmatch(rules.player_id_pattern, job.recipient.player_id):
         raise OrderRejected("INVALID_PLAYER_ID", "El ID de jugador no cumple el formato configurado")
-    label = rules.products.get(job.product.code)
+    ctx = {"recipient.player_id": job.recipient.player_id, "order.id": job.order_id, "product.code": job.product.code}
+    if workflow.phase == "friend_request":
+        return ctx
+    product = job.product
+    label = rules.products.get(product.code)
+    if product.game_item_name and (rules.accept_server_catalog or label is not None):
+        label = product.game_item_name  # el catálogo de Horizons manda el texto exacto del juego
     if label is None:
-        raise OrderRejected("PRODUCT_NOT_ALLOWED", f"Producto no configurado en el flujo: {job.product.code}")
-    return {
-        "recipient.player_id": job.recipient.player_id,
-        "product.code": job.product.code,
+        raise OrderRejected("PRODUCT_NOT_ALLOWED", f"Producto no configurado en el flujo: {product.code}")
+    if product.max_per_transaction and product.quantity > product.max_per_transaction:
+        raise OrderRejected("QUANTITY_EXCEEDS_MAX", f"La tarea pide {product.quantity} unidades y el máximo por "
+                                                    f"envío es {product.max_per_transaction}")
+    total = product.quantity * product.unit_diamond_cost if product.unit_diamond_cost is not None else None
+    ctx.update({
         "product.label": label,
-        "order.id": job.order_id,
-    }
+        "product.category": product.category or rules.default_category,
+        "product.quantity": str(product.quantity),
+        # Vacío si Horizons no envía el costo (v1.0): esa comprobación se omite.
+        "product.total_cost": "" if total is None else str(total),
+    })
+    return ctx
 
 
 def render(template: str | None, ctx: dict[str, str]) -> str:

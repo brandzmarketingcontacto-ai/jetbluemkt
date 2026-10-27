@@ -96,12 +96,14 @@ def test_production_requires_workflow_and_backend_authorization():
         check_mode_allowed(real, "SIMULATION", True)  # un flujo real no corre en simulación
 
 
-def test_freefire_template_refuses_to_load_until_verified(tmp_path):
-    src = paths.resources_dir() / "workflows" / "freefire_gift_supervised.template.yaml"
-    dst = tmp_path / "freefire_gift_supervised.yaml"
+@pytest.mark.parametrize("name,phase", [("freefire_gift_supervised", "gift"),
+                                        ("freefire_friend_supervised", "friend_request")])
+def test_freefire_template_refuses_to_load_until_verified(tmp_path, name, phase):
+    src = paths.resources_dir() / "workflows" / f"{name}.template.yaml"
+    dst = tmp_path / f"{name}.yaml"
     shutil.copy(src, dst)
     with pytest.raises(WorkflowNotReady, match="sin verificar"):
-        load_workflow("freefire_gift_supervised", tmp_path)
+        load_workflow(name, tmp_path)
     # Sin marcadores la estructura es válida (con valores de prueba, NO reales).
     text = dst.read_text(encoding="utf-8")
     data = yaml.safe_load(text)
@@ -112,8 +114,8 @@ def test_freefire_template_refuses_to_load_until_verified(tmp_path):
         for item in data[group].values():
             item["description"] = "descripción de prueba"
     dst.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
-    wf = load_workflow("freefire_gift_supervised", tmp_path)
-    assert wf.simulation is False and "SIMULATION" not in wf.allowed_modes
+    wf = load_workflow(name, tmp_path)
+    assert wf.simulation is False and "SIMULATION" not in wf.allowed_modes and wf.phase == phase
 
 
 async def test_emergency_stop_before_commit(agent_factory, backend, device, db, tmp_path):
@@ -197,3 +199,26 @@ async def test_service_restart_keeps_manual_pause_and_applies_recent_commands(ag
     again = agent_factory()
     await again.startup()
     assert again.state.value == "RUNNING"
+
+
+async def test_supervised_friend_request_and_gift_show_phase_and_quantity(agent_factory, backend, device, db):
+    import json
+    from datetime import timedelta
+    device.require_friendship = True
+    device.auto_accept_friends = True  # el cliente acepta al instante
+    backend.add_order("DX-SUP", "588141749", "caja_tokens_evo_universales", 20)
+    agent = agent_factory(settings=make_settings(automation_mode=AutomationMode.SUPERVISED))
+    await agent.startup()
+    approver = asyncio.create_task(_approve_when_requested(db))
+    await agent.work_once()
+    friend = json.loads((await approver)["summary_json"])
+    assert friend["phase"] == "friend_request" and "quantity" in friend
+    await agent.sync.flush_all()
+    assert backend.results["DX-SUP-friend"]["friendStatus"] == "request_sent"
+    base = backend.clock()
+    backend.clock = lambda: base + timedelta(minutes=backend.friend_retry_minutes + 1)
+    approver = asyncio.create_task(_approve_when_requested(db))
+    await agent.work_once()
+    gift = json.loads((await approver)["summary_json"])
+    assert (gift["phase"], gift["quantity"], gift["total_cost"], gift["chunk"]) == ("gift", "20", "1000", "1/1")
+    assert db.get_job("DX-SUP-gift-0")["status"] == JobStatus.COMPLETED.value

@@ -28,7 +28,7 @@ from dxagent.engine.approval import ApprovalManager
 from dxagent.engine.evidence import EvidenceManager
 from dxagent.engine.observer import Observation, ObservationError, ScreenObserver
 from dxagent.engine.policy import EmergencyStop, ExecutionLimits, ExecutionPolicy, PolicyViolation
-from dxagent.engine.workflow_def import (OrderRejected, StepDef, WorkflowDef, order_context, render)
+from dxagent.engine.workflow_def import (ExitDef, OrderRejected, StepDef, WorkflowDef, order_context, render)
 from dxagent.models import Job, JobOutcome, JobStatus, VerificationResult
 
 log = logging.getLogger(__name__)
@@ -40,6 +40,20 @@ class StepFailed(Exception):
         self.code = code
         self.order_fault = order_fault
         self.retryable = retryable
+
+
+class StepExit(Exception):
+    """Salida anticipada definida en el flujo (antes del envío)."""
+
+    def __init__(self, exit_def: ExitDef):
+        super().__init__(exit_def.message or exit_def.element)
+        self.exit = exit_def
+
+
+def parse_int(text: str | None) -> int | None:
+    """'2,898' / '2.898' / 'x57' -> entero; None si no hay dígitos."""
+    digits = "".join(ch for ch in (text or "") if ch.isdigit())
+    return int(digits) if digits else None
 
 
 @dataclass
@@ -77,6 +91,7 @@ class WorkflowEngine:
         self.emergency_flag = emergency_flag
         self.live_screenshot = live_screenshot
         self._progress_seq = 0
+        self.balance: int | None = None
 
     # ------------------------------------------------------------- utilidades
     def _report(self, job: Job, status: str, step: str, message: str) -> None:
@@ -126,13 +141,23 @@ class WorkflowEngine:
         w, h = obs.size
         await self.device.tap(int(x * w), int(y * h))
 
+    def _check_exits(self, step: StepDef | None, obs: Observation) -> None:
+        for exit_def in (step.exits if step else []):
+            spec = self.wf.elements[exit_def.element]
+            if obs.node(spec.resource_id, spec.text) if (spec.resource_id or spec.text) else False:
+                raise StepExit(exit_def)
+            if obs.ai is not None and obs.ai.element(exit_def.element) is not None:
+                raise StepExit(exit_def)
+
     async def _wait_for(self, observer: ScreenObserver, targets: set[str], goal: str,
-                        timeout: float | None = None, fail_if: dict[str, str] | None = None) -> Observation:
+                        timeout: float | None = None, fail_if: dict[str, str] | None = None,
+                        step: StepDef | None = None) -> Observation:
         deadline = time.monotonic() + (timeout or self.cfg.screen_wait_timeout_s)
         last: Observation | None = None
         while True:
             await asyncio.sleep(self.cfg.settle_s)
             last = await observer.observe(goal)
+            self._check_exits(step, last)  # antes que la pantalla esperada: "ya son amigos" está en el perfil
             if last.screen_id in targets:
                 return last
             if fail_if and fail_if.get("element"):
@@ -157,6 +182,8 @@ class WorkflowEngine:
         outcome.tokens_total = int(totals.get("total_tokens") or 0)
         outcome.cost_usd = round(float(totals.get("cost_usd") or 0.0), 6)
         outcome.ai_requests = int(totals.get("requests") or 0)
+        if outcome.balance is None:
+            outcome.balance = self.balance
         return outcome
 
     async def _run(self, job: Job) -> JobOutcome:
@@ -189,6 +216,10 @@ class WorkflowEngine:
                 await self._run_with_retries(job, step, ctx, policy, observer, apps)
         except EmergencyStop as exc:
             return result(JobStatus.RELEASED, exc.code, "Parada de emergencia antes de la entrega")
+        except StepExit as exc:
+            obs = await self._safe_obs(observer)
+            ev = self._capture(job, obs, f"salida_{exc.exit.outcome}")
+            return self._exit_outcome(job, exc.exit, result, ev)
         except StepFailed as exc:
             status = JobStatus.FAILED if exc.order_fault else JobStatus.RELEASED
             obs = await self._safe_obs(observer)
@@ -262,14 +293,30 @@ class WorkflowEngine:
                           verification=VerificationResult(outcome="uncertain", method="error", evidence_ids=ev))
 
         assert verification is not None
+        verify_step = next(s for s in verify_steps if s.kind == "verify_result")
         if verification.outcome == "success":
-            return result(JobStatus.COMPLETED, None, "Entrega verificada", pre_commit=False,
-                          approved_by=approved_by, verification=verification)
+            gift = self.wf.phase == "gift"
+            return result(JobStatus.COMPLETED, None, "Entrega verificada" if gift else "Solicitud de amistad verificada",
+                          pre_commit=False, approved_by=approved_by, verification=verification,
+                          friend_status=verify_step.success_data.get("friend_status"),
+                          delivered_quantity=job.product.quantity if gift else None)
         if verification.outcome == "failure":
             return result(JobStatus.FAILED, "DELIVERY_REJECTED", "La aplicación informó que el envío fue rechazado",
-                          pre_commit=False, approved_by=approved_by, verification=verification)
+                          pre_commit=False, approved_by=approved_by, verification=verification,
+                          delivered_quantity=0 if self.wf.phase == "gift" else None)
         return result(JobStatus.NEEDS_REVIEW, "RESULT_UNCERTAIN", "Resultado no verificable: requiere revisión manual",
                       pre_commit=False, approved_by=approved_by, verification=verification)
+
+    def _exit_outcome(self, job: Job, exit_def: ExitDef, result, evidence_ids: list[str]) -> JobOutcome:
+        verification = VerificationResult(outcome="not_executed", method="pre_commit_exit",
+                                          details={"element": exit_def.element}, evidence_ids=evidence_ids)
+        gift = self.wf.phase == "gift"
+        if exit_def.outcome == "defer":
+            return result(JobStatus.DEFERRED, exit_def.code or "DEFERRED", exit_def.message or "Tarea aplazada",
+                          defer_reason=exit_def.reason or "deferred", verification=verification)
+        status = JobStatus.COMPLETED if exit_def.outcome == "completed" else JobStatus.FAILED
+        return result(status, exit_def.code, exit_def.message, friend_status=exit_def.friend_status,
+                      delivered_quantity=0 if gift else None, verification=verification)
 
     async def _safe_obs(self, observer: ScreenObserver) -> Observation | None:
         try:
@@ -324,13 +371,32 @@ class WorkflowEngine:
                 await self._wait_for(observer, {target}, f"Esperar la pantalla {target}")
             return
         if kind == "tap":
-            obs = await observer.observe(f"Pulsar {step.element}")
+            element = self._element_name(step.element, ctx, step)
+            obs = await observer.observe(f"Pulsar {element}")
             if step.expect and obs.screen_id == step.expect:
+                self._check_exits(step, obs)
                 return  # ya estamos en la pantalla esperada (reintento idempotente)
-            point, _ = await observer.locate(step.element or "", obs, f"Localizar {step.element}")
+            point, _ = await observer.locate(element, obs, f"Localizar {element}")
             await self._tap(policy, obs, point, step)
             if step.expect:
-                await self._wait_for(observer, {step.expect}, f"Esperar {step.expect}", fail_if=step.fail_if_visible)
+                await self._wait_for(observer, {step.expect}, f"Esperar {step.expect}", fail_if=step.fail_if_visible,
+                                     step=step)
+            elif step.exits:
+                await asyncio.sleep(self.cfg.settle_s)
+                self._check_exits(step, await observer.observe(f"Comprobar el resultado de {element}"))
+            return
+        if kind == "set_quantity":
+            await self._set_quantity(job, step, ctx, policy, observer)
+            return
+        if kind == "read_balance":
+            obs = await observer.observe("Leer el saldo de diamantes")
+            values, _ = await observer.read_fields([step.field or ""], obs, "Leer el saldo de diamantes")
+            balance = parse_int(values.get(step.field or ""))
+            if balance is not None:
+                self.balance = balance
+                self._live(job, balance=balance)
+            elif not step.optional:
+                raise StepFailed("BALANCE_UNREADABLE", "No se pudo leer el saldo de diamantes")
             return
         if kind == "input_text":
             text = render(step.value, ctx)
@@ -348,14 +414,42 @@ class WorkflowEngine:
                 await self._wait_for(observer, {step.expect}, f"Esperar {step.expect}")
             return
         if kind == "verify_fields":
-            obs = await self._wait_for(observer, {step.screen or ""}, "Verificar datos antes del envío")
+            obs = await self._wait_for(observer, {step.screen or ""}, "Verificar datos antes del envío", step=step)
             await self._check_fields(step, ctx, obs, observer)
             return
         raise StepFailed("STEP_NOT_SUPPORTED", f"Paso no ejecutable aquí: {kind}", retryable=False)
 
+    def _element_name(self, template: str | None, ctx: dict[str, str], step: StepDef) -> str:
+        name = render(template, ctx)
+        if name not in self.wf.elements:
+            raise StepFailed("ELEMENT_NOT_CONFIGURED", f"Paso {step.id}: el flujo no define el elemento {name}",
+                             retryable=False)
+        return name
+
+    async def _set_quantity(self, job: Job, step: StepDef, ctx: dict[str, str], policy: ExecutionPolicy,
+                            observer: ScreenObserver) -> None:
+        """Ajusta la cantidad con los botones – / + leyendo el valor en pantalla tras cada tanda de toques."""
+        target = int(render(step.value, ctx))
+        for _ in range(20):
+            obs = await observer.observe(f"Leer la cantidad (objetivo {target})")
+            values, _ = await observer.read_fields([step.field or ""], obs, "Leer la cantidad a regalar")
+            current = parse_int(values.get(step.field or ""))
+            if current is None:
+                raise StepFailed("QUANTITY_UNREADABLE", "No se pudo leer la cantidad en pantalla")
+            if current == target:
+                self._live(job, quantity=current)
+                return
+            button = step.plus if target > current else step.minus
+            point, _ = await observer.locate(button or "", obs, f"Localizar {button}")
+            for _ in range(min(abs(target - current), 10)):
+                await self._tap(policy, obs, point, step)
+            await asyncio.sleep(self.cfg.settle_s)
+        raise StepFailed("QUANTITY_NOT_SET", f"No se logró fijar la cantidad en {target}", retryable=False)
+
     async def _check_fields(self, step: StepDef, ctx: dict[str, str], obs: Observation,
                             observer: ScreenObserver) -> dict[str, Any]:
-        expected = {name: render(tpl, ctx) for name, tpl in step.checks.items()}
+        # Un valor esperado vacío (p. ej. costo total cuando Horizons no envía unitDiamondCost) no se comprueba.
+        expected = {name: v for name, tpl in step.checks.items() if (v := render(tpl, ctx)) != ""}
         values, method = await observer.read_fields(list(expected), obs, "Leer los datos visibles")
         mismatches = {k: {"esperado": v, "en_pantalla": values.get(k)} for k, v in expected.items()
                       if (values.get(k) or "").strip() != v}
@@ -380,6 +474,11 @@ class WorkflowEngine:
         # 2) Aprobación según el modo
         obs = await observer.observe("Resumen previo al envío")
         checked = await self._check_fields(verify_step, ctx, obs, observer)
+        total_cost = ctx.get("product.total_cost") or ""
+        if self.balance is not None and total_cost and self.balance < int(total_cost):
+            # No se envía: el agente reporta el saldo en el heartbeat y Horizons deja de entregar regalos.
+            raise StepFailed("INSUFFICIENT_BALANCE", f"Saldo de diamantes insuficiente: hay {self.balance}, "
+                             f"se necesitan {total_cost}", retryable=False)
         evidence_ids = self._capture(job, obs, "resumen_previo")
         if self.cfg.mode == "SIMULATION":
             approved_by = "politica:simulacion"
@@ -391,7 +490,10 @@ class WorkflowEngine:
             self._report(job, "awaiting_approval", commit.id, "Esperando aprobación humana")
             decision = await self.approvals.request(job.job_id, commit.id, {
                 "order_id": job.order_id, "recipient": job.recipient.player_id, "product_code": job.product.code,
-                "product_label": ctx["product.label"], "fields": checked["fields"], "evidence_ids": evidence_ids,
+                "product_label": ctx.get("product.label", ""), "phase": job.phase,
+                "quantity": ctx.get("product.quantity", ""), "total_cost": ctx.get("product.total_cost", ""),
+                "chunk": f"{job.chunk_index + 1}/{job.chunk_count}", "fields": checked["fields"],
+                "evidence_ids": evidence_ids,
             }, self.cfg.approval_timeout_s, should_abort=lambda: bool(self.emergency_flag and self.emergency_flag.exists()))
             policy.check_emergency()
             if decision.status == "rejected":

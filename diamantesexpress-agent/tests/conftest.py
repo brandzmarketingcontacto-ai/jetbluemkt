@@ -83,11 +83,13 @@ def agent_factory(db, backend, device, tmp_path):
 
 
 # ------------------------------------------------------------- OpenAI falso
-SCREEN_OF = {"home": "home", "recipient": "recipient", "gift_select": "gift_select", "confirm": "confirm",
-             "processing": "processing", "result_success": "result_success", "result_failure": "result_failure"}
+SCREEN_OF = {name: name for name in ("home", "recipient", "gift_select", "confirm", "processing", "result_success",
+                                     "result_failure", "add_friend", "friend_profile", "friend_request_sent")}
 FIELD_RID = {"confirm_recipient": "tv_confirm_recipient", "confirm_product_code": "tv_confirm_product_code",
+             "confirm_quantity": "tv_quantity", "confirm_total_cost": "tv_total_cost", "balance": "tv_balance",
              "result_recipient": "tv_result_recipient", "result_product_code": "tv_result_product_code",
-             "result_ref": "tv_result_ref"}
+             "result_quantity": "tv_result_quantity", "result_ref": "tv_result_ref", "profile_id": "tv_profile_id",
+             "request_target": "tv_request_target"}
 
 
 class FakeResponses:

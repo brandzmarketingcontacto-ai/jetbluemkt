@@ -152,6 +152,16 @@ class LocalDatabase:
             self._conn.execute("PRAGMA synchronous=FULL")
             self._conn.execute("PRAGMA busy_timeout=15000")
             self._conn.executescript(SCHEMA)
+            self._migrate()
+
+    def _migrate(self) -> None:
+        """Agrega columnas nuevas a bases creadas por versiones anteriores del agente."""
+        columns = {r[1] for r in self._conn.execute("PRAGMA table_info(jobs)").fetchall()}
+        for name, ddl in (("server_status", "TEXT"), ("order_key", "TEXT"), ("phase", "TEXT"),
+                          ("quantity", "INTEGER"), ("delivered_quantity", "INTEGER"), ("friend_status", "TEXT")):
+            if name not in columns:
+                self._conn.execute(f"ALTER TABLE jobs ADD COLUMN {name} {ddl}")
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_order_key ON jobs(order_key)")
 
     def close(self) -> None:
         with self._lock:
@@ -172,14 +182,16 @@ class LocalDatabase:
         return dict(row) if row else None
 
     # --------------------------------------------------------------------- jobs
-    def insert_job(self, job_id: str, order_id: str, payload: dict, instance: str, account_key: str) -> bool:
+    def insert_job(self, job_id: str, order_id: str, payload: dict, instance: str, account_key: str,
+                   order_key: str | None = None, phase: str | None = None, quantity: int | None = None) -> bool:
         """Registra un trabajo. Devuelve False si ya existía (pedido duplicado)."""
         now = iso_now()
         try:
             self._exec(
-                "INSERT INTO jobs(job_id, order_id, status, payload_json, instance, account_key, claimed_at, updated_at)"
-                " VALUES (?,?,?,?,?,?,?,?)",
-                (job_id, order_id, JobStatus.CLAIMED.value, json.dumps(payload, default=str), instance, account_key, now, now),
+                "INSERT INTO jobs(job_id, order_id, status, payload_json, instance, account_key, claimed_at, updated_at,"
+                " order_key, phase, quantity) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (job_id, order_id, JobStatus.CLAIMED.value, json.dumps(payload, default=str), instance, account_key, now,
+                 now, order_key or order_id, phase, quantity),
             )
             return True
         except sqlite3.IntegrityError:
@@ -197,9 +209,10 @@ class LocalDatabase:
     def job_known(self, job_id: str) -> bool:
         return self.get_job(job_id) is not None
 
-    def order_active_or_done(self, order_id: str) -> bool:
-        row = self._one("SELECT 1 FROM jobs WHERE order_id=? AND status NOT IN (?, ?) LIMIT 1",
-                        (order_id, JobStatus.RELEASED.value, JobStatus.FAILED.value))
+    def order_active_or_done(self, order_key: str) -> bool:
+        """¿Ya hay otra tarea para el mismo pedido+fase+chunk en curso o hecha? (order_key = Job.dedupe_key)"""
+        row = self._one("SELECT 1 FROM jobs WHERE COALESCE(order_key, order_id)=? AND status NOT IN (?, ?, ?) LIMIT 1",
+                        (order_key, JobStatus.RELEASED.value, JobStatus.FAILED.value, JobStatus.DEFERRED.value))
         return row is not None
 
     def update_job(self, job_id: str, **fields: Any) -> None:

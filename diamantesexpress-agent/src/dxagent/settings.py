@@ -57,11 +57,13 @@ class AgentSettings(BaseModel):
     automation_mode: AutomationMode = AutomationMode.SIMULATION
     workflow_id: str = "simulation_gift"             # flujo para tareas reales (supervised/production)
     simulation_workflow_id: str = "simulation_gift"  # flujo para tareas con simulate=true
+    friend_workflow_id: str = "simulation_friend"    # fase friend_request de tareas reales
+    simulation_friend_workflow_id: str = "simulation_friend"
     approval_timeout_seconds: float = 600.0
     operator_name: str = ""
 
     # Límites de ejecución
-    max_actions_per_order: int = 40
+    max_actions_per_order: int = 120  # la cantidad se ajusta con toques en – / + (hasta 57 por caja)
     max_order_duration_seconds: float = 300.0
     max_step_retries: int = 2
     max_consecutive_errors: int = 3

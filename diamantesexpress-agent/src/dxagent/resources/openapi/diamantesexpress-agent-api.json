@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "DiamantesExpress · Windows Delivery Agent API",
-    "version": "1.0.0",
-    "description": "Contrato fiel de la API real implementada en DiamantesExpress (Hostinger Horizons). El agente Windows inicia todas las llamadas por HTTPS saliente; el sandbox no recibe conexiones entrantes. Dos esquemas de autenticación independientes: token de agente (rutas /agent) y JWT de SUPER_ADMIN (rutas /automation). El enrutamiento al agente solo aplica a pedidos «Pase Booyah» con pago verificado y toggle reversible activado; los demás productos conservan su proveedor."
+    "version": "1.1.0",
+    "description": "Contrato de la API real de DiamantesExpress (Hostinger Horizons), v1.1.0. Este archivo incluye las rutas /agent completas y los esquemas que usa el agente Windows, tal como los publicó Horizons en GET /automation/openapi (las rutas /automation/products* de la consola no se usan en el agente). v1.1 añade catálogo de productos, entrega en dos fases (friend_request + gift con chunking), estado waiting_friend con /defer, saldo de diamantes y deliveredQuantity. Retrocompatible con v1.0."
   },
   "servers": [
     {
@@ -62,6 +62,7 @@
               "queued",
               "processing",
               "verifying",
+              "waiting_friend",
               "completed",
               "failed",
               "manual_review",
@@ -164,6 +165,68 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "friend_request",
+              "gift"
+            ],
+            "description": "Fase de entrega. friend_request = fase A; gift = fase B (puede dividirse en chunks)."
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "Unidades de regalo que cubre esta tarea."
+          },
+          "chunkIndex": {
+            "type": "integer",
+            "description": "Índice del chunk (0-based) dentro de la fase gift."
+          },
+          "chunkCount": {
+            "type": "integer",
+            "description": "Total de chunks de regalo del pedido."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "pase",
+              "caja",
+              "token"
+            ]
+          },
+          "gameItemName": {
+            "type": "string",
+            "description": "Nombre EXACTO del artículo en el juego."
+          },
+          "unitDiamondCost": {
+            "type": "integer",
+            "description": "Diamantes que cuesta cada unidad."
+          },
+          "maxPerTransaction": {
+            "type": "integer",
+            "description": "Máximo de unidades por envío."
+          },
+          "notBefore": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Para waiting_friend: momento a partir del cual la tarea vuelve a ser elegible."
+          },
+          "friendStatus": {
+            "type": "string",
+            "enum": [
+              "request_sent",
+              "already_friends",
+              "player_not_found"
+            ],
+            "description": "Resultado de la fase friend_request."
+          },
+          "deferCount": {
+            "type": "integer",
+            "description": "Veces que el agente aplazó esta tarea (no consume maxAttempts)."
+          },
+          "deliveredQuantity": {
+            "type": "integer",
+            "description": "Unidades realmente entregadas (reportadas en result)."
           }
         }
       },
@@ -236,6 +299,11 @@
                   "appVersion": {
                     "type": "string",
                     "maxLength": 40
+                  },
+                  "diamondBalance": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "v1.1: saldo de diamantes de la cuenta emisora. El servidor lo guarda y lo usa para rechazar tareas de regalo inasequibles."
                   }
                 }
               }
@@ -285,6 +353,26 @@
                     "pollAfterSeconds": {
                       "type": "integer",
                       "description": "Sugerencia de intervalo (10s)."
+                    },
+                    "friendRetryMinutes": {
+                      "type": "integer",
+                      "description": "v1.1: minutos entre reintentos de amistad."
+                    },
+                    "friendWaitMaxHours": {
+                      "type": "integer",
+                      "description": "v1.1: horas máximas de espera de amistad antes de revisión manual."
+                    },
+                    "senderAccountName": {
+                      "type": "string",
+                      "description": "v1.1: nombre de la cuenta emisora (para el mensaje al cliente)."
+                    },
+                    "senderAccountId": {
+                      "type": "string",
+                      "description": "v1.1: ID de la cuenta emisora."
+                    },
+                    "balanceThreshold": {
+                      "type": "integer",
+                      "description": "v1.1: umbral de saldo para alertar."
                     }
                   }
                 }
@@ -355,6 +443,7 @@
                         "automation_off",
                         "paused",
                         "spend_limit_reached",
+                        "insufficient_balance",
                         "queue_unavailable",
                         "empty"
                       ]
@@ -384,6 +473,21 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "needed": {
+                      "type": "integer",
+                      "nullable": true,
+                      "description": "v1.1: diamantes necesarios para la tarea rechazada por saldo."
+                    },
+                    "balance": {
+                      "type": "integer",
+                      "nullable": true,
+                      "description": "v1.1: saldo reportado por el agente."
+                    },
+                    "diamondBalance": {
+                      "type": "integer",
+                      "nullable": true,
+                      "description": "v1.1: saldo actual conocido por el servidor."
                     }
                   }
                 }
@@ -458,6 +562,136 @@
                         "invalid_agent_token",
                         "authorization required",
                         "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/tasks/{id}/defer": {
+      "post": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "v1.1: Aplazar una tarea de regalo (normalmente: el jugador aún no aceptó la amistad).",
+        "description": "La tarea vuelve a waiting_friend con notBefore = ahora + retryAfterSeconds. NO consume maxAttempts. Solo el agente propietario. Una tarea ya finalizada devuelve 409.",
+        "security": [
+          {
+            "agentToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID de la tarea."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 80,
+                    "description": "p. ej. not_friend_yet."
+                  },
+                  "retryAfterSeconds": {
+                    "type": "integer",
+                    "minimum": 30,
+                    "maximum": 86400,
+                    "description": "Tiempo hasta el siguiente reintento. Por defecto friendRetryMinutes×60."
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tarea aplazada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "task": {
+                      "$ref": "#/components/schemas/Task"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o es inválido/revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "missing_agent_token",
+                        "invalid_agent_token",
+                        "authorization required",
+                        "invalid or expired token"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "La tarea no existe.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "task_not_found"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "La tarea pertenece a otro agente o ya terminó.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "task_owned_by_other_agent",
+                        "task_already_finished"
                       ]
                     }
                   }
@@ -661,6 +895,20 @@
                   "errorMessage": {
                     "type": "string",
                     "maxLength": 500
+                  },
+                  "deliveredQuantity": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "v1.1: unidades realmente entregadas. En fase gift, completed requiere deliveredQuantity == quantity."
+                  },
+                  "friendStatus": {
+                    "type": "string",
+                    "enum": [
+                      "request_sent",
+                      "already_friends",
+                      "player_not_found"
+                    ],
+                    "description": "v1.1: resultado de la fase friend_request."
                   }
                 }
               }
@@ -1823,5 +2071,6 @@
     "Resultado uncertain → siempre revisión manual, nunca autocompletado.",
     "Modo production requiere confirmación explícita del SUPER_ADMIN.",
     "Tokens almacenados solo como hash SHA-256; el valor en claro se muestra una sola vez."
-  ]
+  ],
+  "x-agent-extract": "Las rutas /agent y los esquemas Task/Usage son los de la OpenAPI 1.1.0 publicada por Horizons."
 }
