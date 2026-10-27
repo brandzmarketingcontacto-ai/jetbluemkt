@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(SPECPATH).parent
 SRC = ROOT / "src"
 ICON = ROOT / "packaging" / "dxagent.ico"
+VERSION_FILE = ROOT / "packaging" / "version_info.txt"  # Propiedades del .exe (desarrollador: brandzmkt.lat)
 
 datas = [(str(SRC / "dxagent" / "resources"), "dxagent/resources")]
 hidden = [
@@ -31,7 +32,7 @@ exe = EXE(
     name="DiamantesExpressAgent",
     console=False,               # aplicación de ventana; los registros van a archivos
     icon=str(ICON) if ICON.exists() else None,
-    version=None,
+    version=str(VERSION_FILE),
 )
 # Ejecutable de consola para diagnóstico y comandos (doctor, check-api, simulate, set-secret…).
 cli = EXE(
@@ -40,5 +41,6 @@ cli = EXE(
     name="dxagent-cli",
     console=True,
     icon=str(ICON) if ICON.exists() else None,
+    version=str(VERSION_FILE),
 )
 coll = COLLECT(exe, cli, a.binaries, a.datas, strip=False, upx=False, name="DiamantesExpressAgent")

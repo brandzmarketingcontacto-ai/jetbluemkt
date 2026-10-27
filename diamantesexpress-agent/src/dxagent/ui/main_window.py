@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFrame, QGridLay
                                QSystemTrayIcon, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout,
                                QWidget, QComboBox, QPlainTextEdit)
 
-from dxagent import APP_NAME, __version__, paths
+from dxagent import APP_NAME, DEVELOPER, __version__, paths
 from dxagent.database import LocalDatabase
 from dxagent.engine.approval import ApprovalManager
 from dxagent.settings import SettingsManager
@@ -114,7 +114,7 @@ class MainWindow(QMainWindow):
         self.really_quit = False
         self.restart_pending = False
 
-        self.setWindowTitle(f"{APP_NAME} {__version__}")
+        self.setWindowTitle(f"{APP_NAME} {__version__} · {DEVELOPER}")
         self.setWindowIcon(app_icon())
         self.resize(1280, 820)
         self.setStyleSheet(QSS)

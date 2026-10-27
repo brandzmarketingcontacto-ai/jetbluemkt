@@ -84,3 +84,6 @@ Se generan dos ejecutables en la misma carpeta: `DiamantesExpressAgent.exe` (ven
 - El backend solo puede pausar/reanudar el agente; no existe control remoto arbitrario de la PC.
 - Secretos en el Administrador de credenciales de Windows; redacción automática en logs; solo HTTPS.
 - No se modifican archivos, memoria ni protecciones de aplicaciones externas. Sin mecanismos de evasión.
+
+---
+Desarrollado por **[brandzmkt.lat](https://brandzmkt.lat)**.

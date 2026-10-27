@@ -7,6 +7,7 @@ name = "diamantesexpress-agent"
 version = "0.1.0"
 description = "DiamantesExpress Agent: agente nativo de Windows para procesar pedidos con BlueStacks, ADB y OpenAI."
 requires-python = ">=3.12"
+authors = [{name = "brandzmkt.lat"}]
 dependencies = [
   "PySide6>=6.7",
   "httpx>=0.27",

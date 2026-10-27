@@ -7,7 +7,11 @@
 AppId={{6C1E4B0E-5D57-4E44-9C3B-2F1D7E2D9A11}
 AppName={#AppName}
 AppVersion={#AppVersion}
-AppPublisher=DiamantesExpress
+AppPublisher=brandzmkt.lat
+AppPublisherURL=https://brandzmkt.lat
+AppSupportURL=https://brandzmkt.lat
+AppCopyright=© brandzmkt.lat
+VersionInfoCompany=brandzmkt.lat
 DefaultDirName={autopf}\DiamantesExpressAgent
 DefaultGroupName={#AppName}
 OutputDir=..\dist\installer
