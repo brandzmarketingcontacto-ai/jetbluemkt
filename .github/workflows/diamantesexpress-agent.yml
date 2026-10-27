@@ -39,6 +39,8 @@ jobs:
   test-and-build:
     needs: android-sim-apk
     runs-on: windows-latest
+    permissions:
+      contents: write   # publicar el instalador como Release de prueba
     defaults:
       run:
         working-directory: diamantesexpress-agent
@@ -81,3 +83,18 @@ jobs:
           path: |
             diamantesexpress-agent/dist/DiamantesExpressAgent
             diamantesexpress-agent/dist/installer
+      - name: Publicar descarga (Release de prueba)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: agente-pruebas-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: DiamantesExpress Agent 0.1.0 (pruebas ${{ github.run_number }})
+          prerelease: true
+          body: |
+            Versión de PRUEBAS de DiamantesExpress Agent, desarrollado por brandzmkt.lat.
+            - DiamantesExpressAgent-Setup.exe: instalador para Windows 11.
+            - dx-gift-simulator.apk: app FICTICIA de simulación (también incluida dentro del instalador).
+          files: |
+            diamantesexpress-agent/dist/installer/DiamantesExpressAgent-Setup.exe
+            diamantesexpress-agent/dist/DiamantesExpressAgent/android-sim/dx-gift-simulator.apk
