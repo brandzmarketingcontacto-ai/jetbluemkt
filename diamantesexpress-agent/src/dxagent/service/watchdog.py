@@ -56,8 +56,8 @@ class Watchdog:
 
         # 3) Emulador: solo se comprueba si no hay un trabajo en curso.
         if agent.current_job is None and agent.state not in (AgentState.EMERGENCY_STOP,):
-            if agent.bluestacks is not None:
-                agent.health.emulator_running = agent.bluestacks.is_running()
+            if agent.emulator is not None:
+                agent.health.emulator_running = agent.emulator.is_running()
             device = await agent.ensure_device()
             if device is None:
                 self.device_down_since = self.device_down_since or now
@@ -75,17 +75,17 @@ class Watchdog:
     async def _recover_emulator(self, down_for: float) -> None:
         agent = self.agent
         self._alert("EMULATOR_UNRESPONSIVE", f"El emulador no responde desde hace {down_for:.0f}s")
-        if agent.bluestacks is None or not agent.settings.allow_emulator_restart:
+        if agent.emulator is None or not agent.settings.allow_emulator_restart:
             return
         if not agent.recovery.restart_is_safe():
             self._alert("RESTART_BLOCKED", "Reinicio del emulador bloqueado: operación con resultado incierto",
                         "CRITICAL")
             return
         try:
-            if not agent.bluestacks.is_running():
-                agent.bluestacks.launch()
+            if not agent.emulator.is_running():
+                agent.emulator.launch()
             else:
-                await agent.bluestacks.restart(agent.recovery.restart_is_safe,
+                await agent.emulator.restart(agent.recovery.restart_is_safe,
                                                agent.settings.emulator_boot_timeout_seconds)
             self.restarts += 1
             self.device_down_since = None

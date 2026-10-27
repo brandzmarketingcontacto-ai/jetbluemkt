@@ -9,6 +9,7 @@
   dxagent set-secret NOMBRE       Guardar token o clave OpenAI en el almacén seguro
   dxagent screenshot --out f.png  Captura real por ADB
   dxagent analyze-screen --image  Interpretar una captura con OpenAI (consume tokens)
+  dxagent configure --emulator ldplayer|bluestacks|none   Elegir emulador
   dxagent autostart on|off        Inicio automático con Windows
   dxagent emergency-stop | clear-emergency
 """
@@ -33,7 +34,7 @@ def _print(obj) -> None:
 
 def cmd_doctor(_args) -> int:
     from dxagent import __version__, paths
-    from dxagent.android.bluestacks import BlueStacksManager
+    from dxagent.android.emulator import EMULATORS, build_emulator
     from dxagent.api.contract import ApiContract
     from dxagent.ai.pricing import PricingTable
     from dxagent.engine.workflow_def import load_workflow
@@ -66,11 +67,11 @@ def cmd_doctor(_args) -> int:
         report["workflow"] = {"id": wf.id, "simulation": wf.simulation, "allowed_modes": wf.allowed_modes}
     except Exception as exc:
         report["workflow"] = f"ERROR: {exc}"
+    report["emulator"] = f"{EMULATORS[s.emulator]} ({s.emulator})"
     try:
-        report["bluestacks"] = BlueStacksManager(s.bluestacks_install_dir, s.bluestacks_conf_path,
-                                                 s.bluestacks_instance, s.adb_path, s.adb_serial).status()
+        report["emulator_status"] = build_emulator(s).status()
     except Exception as exc:
-        report["bluestacks"] = f"ERROR: {exc}"
+        report["emulator_status"] = f"ERROR: {exc}"
     from dxagent.audit import AuditLog
     ok, count = AuditLog(paths.logs_dir() / "audit.jsonl").verify()
     report["audit_log"] = {"integro": ok, "registros": count}
@@ -193,11 +194,10 @@ def cmd_set_secret(args) -> int:
 
 
 def cmd_screenshot(args) -> int:
-    from dxagent.android.bluestacks import BlueStacksManager
+    from dxagent.android.emulator import build_emulator
     from dxagent.settings import SettingsManager
     s = SettingsManager().load()
-    manager = BlueStacksManager(s.bluestacks_install_dir, s.bluestacks_conf_path, s.bluestacks_instance, s.adb_path,
-                                s.adb_serial, s.adb_command_timeout_seconds)
+    manager = build_emulator(s)  # BlueStacks 5 o LDPlayer 9, según Configuración
 
     async def go():
         device = await manager.ensure_ready(s.emulator_boot_timeout_seconds)
@@ -240,6 +240,25 @@ def cmd_analyze(args) -> int:
                                     goal="Diagnóstico manual de pantalla", purpose="cli_analyze")
     analysis = asyncio.run(go())
     _print({"analysis": analysis.model_dump(), "usage": db.recent_usage(1)[0]})
+    return 0
+
+
+def cmd_configure(args) -> int:
+    """Configuración inicial (la usa el instalador): emulador y uso de ADB."""
+    from dxagent.android.emulator import EMULATORS
+    from dxagent.settings import SettingsManager
+    manager = SettingsManager()
+    s = manager.load()
+    if args.emulator == "none":
+        s.device_backend = "mock"
+    else:
+        s.emulator = args.emulator
+        s.device_backend = "adb"
+    if args.instance is not None:
+        s.emulator_instance = args.instance
+    manager.save(s)
+    label = "simulador interno" if s.device_backend == "mock" else EMULATORS[s.emulator]
+    print(f"Emulador configurado: {label}. Puede cambiarlo en Configuración → Emulador Android y ADB.")
     return 0
 
 
@@ -291,6 +310,9 @@ def build_parser() -> argparse.ArgumentParser:
     an = sub.add_parser("analyze-screen", help="Analizar captura con OpenAI")
     an.add_argument("--image", required=True)
     an.add_argument("--workflow", default="")
+    conf = sub.add_parser("configure", help="Elegir emulador (lo usa el instalador)")
+    conf.add_argument("--emulator", required=True, choices=["bluestacks", "ldplayer", "none"])
+    conf.add_argument("--instance", default=None, help="BlueStacks: nombre interno; LDPlayer: índice o nombre")
     auto = sub.add_parser("autostart", help="Inicio automático")
     auto.add_argument("state", choices=["on", "off"])
     sub.add_parser("emergency-stop")
@@ -307,7 +329,8 @@ def main(argv: list[str] | None = None) -> int:
     if command == "service":
         from dxagent.service.bootstrap import run_service
         return run_service()
-    handlers = {"doctor": cmd_doctor, "simulate": cmd_simulate, "mock-backend": cmd_mock_backend, "check-api": cmd_check_api,
-                "set-secret": cmd_set_secret, "screenshot": cmd_screenshot, "analyze-screen": cmd_analyze,
-                "autostart": cmd_autostart, "emergency-stop": cmd_emergency, "clear-emergency": cmd_emergency}
+    handlers = {"doctor": cmd_doctor, "simulate": cmd_simulate, "mock-backend": cmd_mock_backend,
+                "check-api": cmd_check_api, "set-secret": cmd_set_secret, "screenshot": cmd_screenshot,
+                "analyze-screen": cmd_analyze, "autostart": cmd_autostart, "configure": cmd_configure,
+                "emergency-stop": cmd_emergency, "clear-emergency": cmd_emergency}
     return handlers[command](args)

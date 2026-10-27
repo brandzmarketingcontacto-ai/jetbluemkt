@@ -69,13 +69,13 @@ class Health:
 class AgentService:
     def __init__(self, settings: AgentSettings, db: LocalDatabase, secrets: SecretStore, *,
                  api: HorizonsApiClient | None = None, device_factory: DeviceFactory | None = None,
-                 vision: OpenAIVisionAgent | None = None, bluestacks=None, workflow: WorkflowDef | None = None,
+                 vision: OpenAIVisionAgent | None = None, emulator=None, workflow: WorkflowDef | None = None,
                  evidence_root=None, emergency_flag=None, live_screenshot=None, autostart_running: bool = True,
                  engine_overrides: dict[str, Any] | None = None):
         self.settings = settings
         self.db = db
         self.secrets = secrets
-        self.bluestacks = bluestacks
+        self.emulator = emulator  # BlueStacksManager | LDPlayerManager | None (simulador interno)
         self.emergency_flag = emergency_flag or paths.emergency_flag_path()
         self.live_screenshot = live_screenshot
         self.health = Health()
@@ -99,7 +99,8 @@ class AgentService:
         self.device_factory = device_factory
         self.device: DeviceController | None = None
         self.evidence = EvidenceManager(db, evidence_root or paths.evidence_dir())
-        self.queue = JobQueueManager(db, self.api, settings.bluestacks_instance or "default", settings.account_key,
+        instance_key = f"{settings.emulator}:{settings.emulator_instance or 'default'}"
+        self.queue = JobQueueManager(db, self.api, instance_key, settings.account_key,
                                      self.evidence, settings.openai_model)
         self.sync = OutboxSync(db, self.api)
         self.recovery = RecoveryManager(db)
@@ -147,6 +148,7 @@ class AgentService:
             "api_online": self.health.api_online, "api_error": self.health.api_error,
             "api_last_ok": self.health.api_last_ok, "device_ok": self.health.device_ok,
             "device_error": self.health.device_error, "emulator_running": self.health.emulator_running,
+            "emulator": self.emulator.display_name if self.emulator is not None else "Simulador interno",
             "vision_enabled": self.vision is not None, "outbox_pending": self.db.outbox_pending_count(),
             "current_job_id": self.current_job.job_id if self.current_job else None,
             "emergency": self.emergency_flag.exists(), "ts": time.time(),
@@ -231,8 +233,8 @@ class AgentService:
         for task in self._tasks.values():
             task.cancel()
         await asyncio.gather(*self._tasks.values(), return_exceptions=True)
-        if self.settings.close_emulator_on_stop and self.bluestacks is not None and self.recovery.restart_is_safe():
-            self.bluestacks.stop()
+        if self.settings.close_emulator_on_stop and self.emulator is not None and self.recovery.restart_is_safe():
+            self.emulator.stop()
         self.set_state(AgentState.STOPPED)
         self.publish_status()
         await self.api.aclose()

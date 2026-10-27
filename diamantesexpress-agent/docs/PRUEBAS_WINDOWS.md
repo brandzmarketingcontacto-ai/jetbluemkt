@@ -1,6 +1,6 @@
 # Pruebas pendientes en Windows
 
-El desarrollo se hizo en Linux, sin Windows, sin BlueStacks, sin Android SDK y sin claves reales.
+El desarrollo se hizo en Linux, sin Windows, sin BlueStacks ni LDPlayer, sin Android SDK y sin claves reales.
 Lo siguiente **no está verificado** y debe probarse en la PC dedicada antes de operar.
 Marque cada punto y guarde `dxagent-cli.exe doctor` y los logs como evidencia.
 
@@ -14,7 +14,9 @@ Marque cada punto y guarde `dxagent-cli.exe doctor` y los logs como evidencia.
       y **no** en `settings.json` ni en los logs.
 - [ ] "Impedir suspensión" evita la suspensión con el agente activo.
 
-## B. BlueStacks y ADB (las heurísticas de detección deben confirmarse)
+## B. Emulador y ADB (las heurísticas de detección deben confirmarse)
+
+**BlueStacks 5**
 - [ ] `doctor` detecta la carpeta de instalación (registro `HKLM\SOFTWARE\BlueStacks_nxt` o rutas por defecto).
 - [ ] Se encuentra `bluestacks.conf` y se listan las instancias con su puerto ADB.
       Si no, configure `bluestacks_conf_path`/`adb_serial` y reporte la ruta real para corregir la heurística.
@@ -25,7 +27,19 @@ Marque cada punto y guarde `dxagent-cli.exe doctor` y los logs como evidencia.
 - [ ] Congelamiento: detectar con `IsHungAppWindow`/ADB y verificar que el reinicio controlado funciona y que se
       **bloquea** si hay un pedido en `committing`/`verifying`.
 
-## C. App de simulación en BlueStacks
+**LDPlayer 9**
+- [ ] `doctor` (con `emulator=ldplayer`) encuentra `ldconsole.exe` (registro `HKCU\Software\leidian\LDPlayer9` o
+      `C:\LDPlayer\LDPlayer9`) y su `adb.exe`. Si no, configure la carpeta y reporte la ruta real.
+- [ ] `ldconsole list2` se interpreta bien: `doctor` lista instancias con índice, nombre y puerto
+      (confirmar el formato de columnas en su versión de LDPlayer).
+- [ ] Con LDPlayer cerrado, `dxagent-cli.exe screenshot` lo abre (`ldconsole launch --index N`) y obtiene la captura
+      por `emulator-5554` o `127.0.0.1:5555`.
+- [ ] Instancia secundaria (índice 1): conecta por `emulator-5556`/`127.0.0.1:5557`.
+- [ ] Reinicio controlado (`ldconsole quit` + `launch`) y bloqueo si hay un pedido en `committing`/`verifying`.
+- [ ] Instalador: elegir LDPlayer deja `emulator=ldplayer` en `settings.json` del usuario; cambiarlo en
+      Configuración reinicia el servicio con el otro emulador.
+
+## C. App de simulación en el emulador
 - [ ] Compilar e instalar `android-sim` (Android Studio).
 - [ ] `uiautomator dump` expone los `resource-id` esperados (`btn_start`, `field_player_id`, …).
 - [ ] Modo SIMULACIÓN + `device_backend=adb`: 20 pedidos con el backend simulado → todos `completed`.

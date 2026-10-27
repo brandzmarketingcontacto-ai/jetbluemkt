@@ -1,4 +1,4 @@
-"""Página de Configuración: API, token del agente, secretos, BlueStacks, OpenAI, presupuesto, modo y 24/7."""
+"""Página de Configuración: API, token del agente, secretos, emulador (BlueStacks o LDPlayer), OpenAI, presupuesto, modo y 24/7."""
 
 from __future__ import annotations
 
@@ -130,35 +130,49 @@ class SettingsPage(QScrollArea):
         lay.addWidget(box)
         self.refresh_secret_status()
 
-        # --- BlueStacks
-        box, f = section("BlueStacks y Android")
+        # --- Emulador Android
+        box, f = section("Emulador Android y ADB")
+        self.emu_form = f
         self.device_backend = QComboBox()
-        self.device_backend.addItem("Simulador interno (sin BlueStacks)", "mock")
-        self.device_backend.addItem("BlueStacks 5 por ADB", "adb")
-        self.device_backend.setCurrentIndex(0 if s.device_backend == "mock" else 1)
+        self.device_backend.addItem("Simulador interno (sin emulador)", ("mock", s.emulator))
+        self.device_backend.addItem("BlueStacks 5 por ADB", ("adb", "bluestacks"))
+        self.device_backend.addItem("LDPlayer 9 por ADB", ("adb", "ldplayer"))
+        current = 0 if s.device_backend == "mock" else (2 if s.emulator == "ldplayer" else 1)
+        self.device_backend.setCurrentIndex(current)
         self.bs_dir = QLineEdit(s.bluestacks_install_dir)
-        self.bs_dir.setPlaceholderText("Vacío = detección automática")
+        self.bs_dir.setPlaceholderText("Vacío = detección automática (C:\\Program Files\\BlueStacks_nxt)")
         self.bs_conf = QLineEdit(s.bluestacks_conf_path)
-        self.bs_instance = QComboBox()
-        self.bs_instance.setEditable(True)
-        self.bs_instance.setCurrentText(s.bluestacks_instance)
+        self.bs_conf.setPlaceholderText("Vacío = C:\\ProgramData\\BlueStacks_nxt\\bluestacks.conf")
+        self.ld_dir = QLineEdit(s.ldplayer_install_dir)
+        self.ld_dir.setPlaceholderText("Vacío = detección automática (C:\\LDPlayer\\LDPlayer9)")
+        self.emu_instance = QComboBox()
+        self.emu_instance.setEditable(True)
+        self.emu_instance.setCurrentText(s.emulator_instance)
         detect = QPushButton("Detectar instalación e instancias")
-        detect.clicked.connect(self.detect_bluestacks)
-        self.bs_info = QLabel("")
-        self.bs_info.setWordWrap(True)
+        detect.clicked.connect(self.detect_emulator)
+        self.emu_info = QLabel("")
+        self.emu_info.setWordWrap(True)
+        self.emu_hint = QLabel("")
+        self.emu_hint.setObjectName("muted")
+        self.emu_hint.setWordWrap(True)
         self.adb_path = QLineEdit(s.adb_path)
+        self.adb_path.setPlaceholderText("Vacío = adb del emulador o del PATH")
         self.adb_serial = QLineEdit(s.adb_serial)
-        self.adb_serial.setPlaceholderText("Vacío = puerto de la instancia o único dispositivo")
+        self.adb_serial.setPlaceholderText("Vacío = puerto de la instancia (p. ej. emulator-5554 o 127.0.0.1:5555)")
         self.account_key = QLineEdit(s.account_key)
         f.addRow("Dispositivo", self.device_backend)
+        f.addRow("", self.emu_hint)
         f.addRow("Carpeta de BlueStacks", self.bs_dir)
         f.addRow("bluestacks.conf", self.bs_conf)
-        f.addRow("Instancia", self.bs_instance)
+        f.addRow("Carpeta de LDPlayer", self.ld_dir)
+        f.addRow("Instancia", self.emu_instance)
         f.addRow("", detect)
-        f.addRow("", self.bs_info)
+        f.addRow("", self.emu_info)
         f.addRow("Ruta de adb", self.adb_path)
         f.addRow("Serial ADB", self.adb_serial)
         f.addRow("Cuenta del juego (clave de bloqueo)", self.account_key)
+        self.device_backend.currentIndexChanged.connect(self._update_emulator_rows)
+        self._update_emulator_rows()
         lay.addWidget(box)
 
         # --- OpenAI y presupuesto
@@ -243,10 +257,11 @@ class SettingsPage(QScrollArea):
         data = self.s.model_dump()
         data.update(
             api_url=self.api_url.text(), agent_name=self.agent_name.text().strip(),
+            emulator=self.selected_emulator(), ldplayer_install_dir=self.ld_dir.text().strip(),
             openapi_contract_path=self.contract.text().strip(), poll_interval_seconds=self.poll.value(),
-            heartbeat_interval_seconds=self.heartbeat.value(), device_backend=self.device_backend.currentData(),
+            heartbeat_interval_seconds=self.heartbeat.value(), device_backend=self.device_backend.currentData()[0],
             bluestacks_install_dir=self.bs_dir.text().strip(), bluestacks_conf_path=self.bs_conf.text().strip(),
-            bluestacks_instance=self.bs_instance.currentText().strip(), adb_path=self.adb_path.text().strip(),
+            emulator_instance=self.emu_instance.currentText().strip(), adb_path=self.adb_path.text().strip(),
             adb_serial=self.adb_serial.text().strip(), account_key=self.account_key.text().strip() or "default",
             vision_backend=self.vision_backend.currentData(), openai_model=self.model.text().strip(),
             max_ai_cost_per_order_usd=self.max_cost.value(), daily_ai_budget_usd=self.daily_budget.value(),
@@ -347,29 +362,54 @@ class SettingsPage(QScrollArea):
                 QMessageBox.information(self, "OpenAI", f"Clave válida. Modelo disponible: {result}")
         run_in_background(work, done)
 
-    def detect_bluestacks(self) -> None:
-        from dxagent.android.bluestacks import BlueStacksManager
+    def selected_emulator(self) -> str:
+        return self.device_backend.currentData()[1]
+
+    def _update_emulator_rows(self) -> None:
+        backend, emulator = self.device_backend.currentData()
+        uses_adb = backend == "adb"
+        for widget, visible in ((self.bs_dir, uses_adb and emulator == "bluestacks"),
+                                (self.bs_conf, uses_adb and emulator == "bluestacks"),
+                                (self.ld_dir, uses_adb and emulator == "ldplayer")):
+            self.emu_form.setRowVisible(widget, visible)
+        for widget in (self.emu_instance, self.adb_path, self.adb_serial, self.emu_info):
+            self.emu_form.setRowVisible(widget, uses_adb)
+        hints = {
+            "mock": "Pruebas sin emulador: el agente usa una app Android simulada interna.",
+            "bluestacks": "BlueStacks 5: active Configuración → Avanzado → Android Debug Bridge (ADB). "
+                          "Instancia = nombre interno (p. ej. Pie64 o Pie64_1).",
+            "ldplayer": "LDPlayer 9: active Configuración → Otros ajustes → Depuración ADB → Abrir conexión local. "
+                        "Instancia = índice (0 = principal) o nombre; el serial suele ser emulator-5554.",
+        }
+        self.emu_hint.setText(hints["mock" if not uses_adb else emulator])
+
+    def detect_emulator(self) -> None:
+        from dxagent.android.emulator import EMULATORS, build_emulator
+        if self.device_backend.currentData()[0] != "adb":
+            self.emu_info.setText("Seleccione BlueStacks o LDPlayer para detectar.")
+            return
         try:
-            manager = BlueStacksManager(self.bs_dir.text().strip(), self.bs_conf.text().strip(),
-                                        self.bs_instance.currentText().strip(), self.adb_path.text().strip())
+            manager = build_emulator(self.collect())
             st = manager.status()
         except Exception as exc:
-            self.bs_info.setText(f"Error: {exc}")
+            self.emu_info.setText(f"Error: {exc}")
             return
-        current = self.bs_instance.currentText()
-        self.bs_instance.clear()
-        for name, info in st["instances"].items():
-            self.bs_instance.addItem(name)
-        self.bs_instance.setCurrentText(current)
+        current = self.emu_instance.currentText()
+        self.emu_instance.clear()
+        for name in st["instances"]:
+            self.emu_instance.addItem(name)
+        self.emu_instance.setCurrentText(current or st.get("selected_instance") or "")
         instances = ", ".join(f"{k} ({v['display_name'] or 'sin nombre'}, puerto {v['adb_port']})"
                               for k, v in st["instances"].items()) or "ninguna"
-        self.bs_info.setText(
-            f"Instalado: {'sí' if st['installed'] else 'no'} · Carpeta: {st['install_dir'] or '—'} · "
-            f"Configuración: {st['conf_path'] or '—'} · ADB: {st['adb_path'] or 'no encontrado'} · "
-            f"ADB habilitado en BlueStacks: {st['adb_enabled']} · En ejecución: {'sí' if st['running'] else 'no'}"
-            f"<br>Instancias: {instances}")
-        if st["install_dir"] and not self.bs_dir.text():
-            self.bs_dir.setText(st["install_dir"])
+        adb_state = {True: "sí", False: "no", None: "verificar en el emulador"}[st["adb_enabled"]]
+        conf = f" · Configuración: {st['conf_path'] or '—'}" if "conf_path" in st else ""
+        self.emu_info.setText(
+            f"{EMULATORS[manager.name]} · Instalado: {'sí' if st['installed'] else 'no'} · "
+            f"Carpeta: {st['install_dir'] or '—'}{conf} · ADB: {st['adb_path'] or 'no encontrado'} · "
+            f"ADB habilitado: {adb_state} · En ejecución: {'sí' if st['running'] else 'no'}<br>Instancias: {instances}")
+        target = self.ld_dir if manager.name == "ldplayer" else self.bs_dir
+        if st["install_dir"] and not target.text():
+            target.setText(st["install_dir"])
 
     def clear_emergency(self) -> None:
         flag = paths.emergency_flag_path()

@@ -137,6 +137,8 @@ async def test_05_adb_disconnected(agent_factory, backend, device, db):
 
 # 6 -----------------------------------------------------------------------------
 class FakeBlueStacks:
+    name, display_name = "bluestacks", "BlueStacks 5"
+
     def __init__(self):
         self.restarts = 0
         self.running = True
@@ -159,7 +161,7 @@ class FakeBlueStacks:
 async def test_06_android_frozen_restarts_only_when_safe(agent_factory, backend, device, db):
     device.frozen = True
     bs = FakeBlueStacks()
-    agent = agent_factory(bluestacks=bs)
+    agent = agent_factory(emulator=bs)
     await agent.startup()
     assert await agent.work_once() is False
     assert agent.state == AgentState.DEGRADED

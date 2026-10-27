@@ -67,11 +67,13 @@ class AgentSettings(BaseModel):
     max_consecutive_errors: int = 3
     screen_wait_timeout_seconds: float = 20.0
 
-    # Android / BlueStacks
-    device_backend: str = "mock"  # mock | adb
-    bluestacks_instance: str = ""
+    # Android: emulador (BlueStacks 5 o LDPlayer 9) controlado por ADB
+    device_backend: str = "mock"  # mock (simulador interno) | adb (emulador real)
+    emulator: str = "bluestacks"  # bluestacks | ldplayer
+    emulator_instance: str = ""   # BlueStacks: nombre interno (p. ej. Pie64_1); LDPlayer: índice o nombre
     bluestacks_install_dir: str = ""
     bluestacks_conf_path: str = ""
+    ldplayer_install_dir: str = ""
     adb_path: str = ""
     adb_serial: str = ""
     adb_command_timeout_seconds: float = 20.0
@@ -102,6 +104,14 @@ class AgentSettings(BaseModel):
             raise ValueError("vision_backend debe ser auto, openai o disabled")
         return value
 
+    @field_validator("emulator")
+    @classmethod
+    def _emulator(cls, value: str) -> str:
+        value = value.lower().strip()
+        if value not in {"bluestacks", "ldplayer"}:
+            raise ValueError("emulator debe ser bluestacks o ldplayer")
+        return value
+
     @field_validator("device_backend")
     @classmethod
     def _device_backend(cls, value: str) -> str:
@@ -129,7 +139,9 @@ ENV_MAP: dict[str, str] = {
     "MAX_AI_COST_PER_ORDER_USD": "max_ai_cost_per_order_usd",
     "DAILY_AI_BUDGET_USD": "daily_ai_budget_usd",
     "AUTOMATION_MODE": "automation_mode",
-    "BLUESTACKS_INSTANCE": "bluestacks_instance",
+    "DX_EMULATOR": "emulator",
+    "EMULATOR_INSTANCE": "emulator_instance",
+    "BLUESTACKS_INSTANCE": "emulator_instance",
 }
 SECRET_ENV = {
     "agent_token": ("DX_AGENT_TOKEN", "DIAMANTESEXPRESS_AGENT_TOKEN"),
@@ -236,6 +248,9 @@ class SettingsManager:
             except (OSError, json.JSONDecodeError) as exc:
                 log.error("settings.json ilegible, se usan valores por defecto: %s", exc)
         data.pop("agent_id", None)  # campo de la versión anterior (el servidor identifica por token)
+        legacy_instance = data.pop("bluestacks_instance", None)  # versión anterior: solo BlueStacks
+        if legacy_instance and not data.get("emulator_instance"):
+            data["emulator_instance"] = legacy_instance
         env = self._merged_env()
         self.overridden = set()
         for env_name, field in reversed(list(ENV_MAP.items())):  # los nombres oficiales tienen prioridad

@@ -153,6 +153,9 @@ def _window_hung(pid: int) -> bool:
 
 
 class BlueStacksManager:
+    name = "bluestacks"
+    display_name = "BlueStacks 5"
+
     def __init__(self, install_dir: str = "", conf_path: str = "", instance: str = "", adb_path: str = "",
                  adb_serial: str = "", adb_timeout: float = 20.0,
                  process_lister: Callable[[], list[dict[str, Any]]] = _list_player_processes,
@@ -171,6 +174,7 @@ class BlueStacksManager:
     def status(self) -> dict[str, Any]:
         procs = self.player_processes()
         return {
+            "emulator": self.name,
             "installed": self.install.found,
             "install_dir": self.install.install_dir,
             "conf_path": self.install.conf_path,

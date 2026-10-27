@@ -29,13 +29,13 @@ class AdbDevice:
     description: str = ""
 
 
-def find_adb(configured: str = "", bluestacks_dir: str = "") -> str | None:
-    """Busca adb: ruta configurada > HD-Adb.exe de BlueStacks > adb del PATH."""
+def find_adb(configured: str = "", emulator_dir: str = "") -> str | None:
+    """Busca adb: ruta configurada > adb del emulador (HD-Adb.exe de BlueStacks o adb.exe de LDPlayer) > PATH."""
     candidates: list[Path] = []
     if configured:
         candidates.append(Path(configured))
-    if bluestacks_dir:
-        candidates += [Path(bluestacks_dir) / "HD-Adb.exe", Path(bluestacks_dir) / "adb.exe"]
+    if emulator_dir:
+        candidates += [Path(emulator_dir) / "HD-Adb.exe", Path(emulator_dir) / "adb.exe"]
     for candidate in candidates:
         if candidate.is_file():
             return str(candidate)

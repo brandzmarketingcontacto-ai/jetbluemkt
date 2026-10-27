@@ -23,6 +23,11 @@ WizardStyle=modern
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Tasks]
+; Emulador Android a usar. La elección se guarda en la configuración del usuario y se puede cambiar
+; después desde Configuración → Emulador Android y ADB.
+Name: "emu_bluestacks"; Description: "BlueStacks 5"; GroupDescription: "Emulador Android a usar (se puede cambiar luego en Configuración):"; Flags: exclusive
+Name: "emu_ldplayer"; Description: "LDPlayer 9"; GroupDescription: "Emulador Android a usar (se puede cambiar luego en Configuración):"; Flags: exclusive unchecked
+Name: "emu_none"; Description: "Ninguno por ahora (simulador interno, solo pruebas)"; GroupDescription: "Emulador Android a usar (se puede cambiar luego en Configuración):"; Flags: exclusive unchecked
 Name: "autostart"; Description: "Iniciar DiamantesExpress Agent al iniciar sesión en Windows"; Flags: checkedonce
 Name: "desktopicon"; Description: "Crear acceso directo en el escritorio"; Flags: unchecked
 
@@ -41,6 +46,10 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
   Flags: uninsdeletevalue; Tasks: autostart
 
 [Run]
+; runasoriginaluser: escribe la configuración en %LOCALAPPDATA% del usuario que instaló, no del administrador.
+Filename: "{app}\dxagent-cli.exe"; Parameters: "configure --emulator bluestacks"; Flags: runhidden runasoriginaluser waituntilterminated; Tasks: emu_bluestacks
+Filename: "{app}\dxagent-cli.exe"; Parameters: "configure --emulator ldplayer"; Flags: runhidden runasoriginaluser waituntilterminated; Tasks: emu_ldplayer
+Filename: "{app}\dxagent-cli.exe"; Parameters: "configure --emulator none"; Flags: runhidden runasoriginaluser waituntilterminated; Tasks: emu_none
 Filename: "{app}\{#AppExe}"; Parameters: "ui"; Description: "Abrir {#AppName}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]

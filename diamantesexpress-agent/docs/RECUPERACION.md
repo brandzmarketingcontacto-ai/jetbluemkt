@@ -12,7 +12,7 @@
 |---|---|
 | Sin Internet / API caída | Estado *Degradado*; no reclama pedidos; reintenta con backoff exponencial (máx. 5 min); los reportes esperan en el outbox y se envían en orden al volver. |
 | Token inválido o revocado | Estado *Error de credenciales*; deja de reclamar tareas hasta cargar un token nuevo. |
-| BlueStacks cerrado | Lo abre con la instancia configurada y espera el arranque (timeout configurable). |
+| Emulador cerrado (BlueStacks o LDPlayer) | Lo abre con la instancia configurada y espera el arranque (timeout configurable). |
 | ADB desconectado | Reconecta por el puerto de la instancia; si no hay dispositivo, no reclama pedidos. |
 | Emulador congelado | Tras el umbral configurado, reinicio controlado **solo si no hay operación incierta**. |
 | App de prueba/juego cerrado | La abre (solo paquetes autorizados en el flujo). |

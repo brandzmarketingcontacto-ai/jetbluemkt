@@ -17,7 +17,7 @@
 │                                        │  ├ OpenAIVisionAgent ─ UsageTracker ─┼──► OpenAI Responses API
 │                                        │  └ EvidenceManager                   │  │
 │                                        │ RecoveryManager · Watchdog           │  │
-│                                        │ BlueStacksManager ─ ADBController ───┼──► BlueStacks 5 (HD-Player)
+│                                        │ Emulador ─ ADBController ────────────┼──► BlueStacks 5 o LDPlayer 9
 │                                        └──────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -30,7 +30,7 @@
 | AgentService | `service/agent.py`, `service/bootstrap.py` |
 | HorizonsApiClient | `api/client.py`, `api/contract.py`, `api/errors.py` (simulador: `api/mock_backend.py`) |
 | JobQueueManager | `service/job_queue.py` (+ `service/sync.py`: outbox) |
-| BlueStacksManager | `android/bluestacks.py` |
+| BlueStacksManager / LDPlayerManager | `android/bluestacks.py`, `android/ldplayer.py`; selección en `android/emulator.py` |
 | ADBController | `android/adb.py`, `android/device.py` (simulador: `android/mock_device.py`) |
 | AndroidAppManager | `android/app_manager.py` |
 | OpenAIVisionAgent | `ai/vision.py`, `ai/schemas.py` |
@@ -65,7 +65,7 @@
 
 ## Uso de OpenAI solo cuando aporta valor
 
-BlueStacks, ADB, apertura de apps y comprobaciones técnicas no usan IA. En cada pantalla el observador intenta:
+El arranque del emulador, ADB, apertura de apps y comprobaciones técnicas no usan IA. En cada pantalla el observador intenta:
 1) jerarquía UI (`uiautomator`, gratis y exacta), 2) coordenadas calibradas y validadas para la resolución
 actual, 3) **solo entonces** OpenAI. Las capturas en blanco no se envían a la IA. Cada solicitud pasa antes
 por el control de presupuesto (por pedido, diario y número de solicitudes).

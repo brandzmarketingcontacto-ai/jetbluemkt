@@ -1,7 +1,7 @@
 # DiamantesExpress Agent
 
 Aplicación nativa para Windows 11 que recibe pedidos de la tienda **DiamantesExpress** (Hostinger
-Horizons), controla un emulador **BlueStacks 5** por **ADB**, usa **OpenAI** (Responses API) para
+Horizons), controla un emulador **BlueStacks 5** o **LDPlayer 9** por **ADB** (se elige al instalar y se cambia en Configuración), usa **OpenAI** (Responses API) para
 interpretar pantallas cuando hace falta y reporta al backend el resultado verificado de cada entrega
 junto con los tokens y el costo consumidos.
 
@@ -19,10 +19,10 @@ junto con los tokens y el costo consumidos.
 | Interfaz, configuración, secretos en Windows Credential Manager | Implementado. UI probada en modo offscreen (Linux). Credential Manager: pendiente de prueba en Windows. |
 | Cliente API Horizons (**contrato oficial** OpenAPI 1.0.0: `/hcgi/api/agent/...`) | Implementado y probado contra un backend simulado que reproduce ese contrato (en memoria y por HTTP real). **Pendiente**: probar contra el dominio publicado con un token `dxa_` real. |
 | Heartbeat, modo/pausa del servidor, claim con lease, progreso, resultado con `usage` y evidencia (hashes), recuperación con `/agent/tasks/current`, registro de auditoría | Implementado y probado contra el backend simulado. |
-| BlueStacks: detección, instancias, inicio, espera de arranque, reinicio seguro | Implementado. Probado con instalación y procesos simulados. **Pendiente**: validar en Windows real. |
+| Emulador **BlueStacks 5** (`HD-Player.exe`, `bluestacks.conf`) o **LDPlayer 9** (`ldconsole.exe`): detección, instancias, inicio, espera de arranque, reinicio seguro | Implementado. Probado con instalaciones, procesos y consola simulados. **Pendiente**: validar ambos en Windows real. |
 | ADB: conexión, captura, resolución/orientación, app activa, toques, texto, apertura de apps autorizadas | Implementado. Probado con un `adb` falso (argumentos y parseo). **Pendiente**: BlueStacks real. |
 | OpenAI Responses API con salida estructurada (Pydantic) y registro de uso real | Implementado. Probado con un cliente falso que imita `responses.parse`. **Pendiente**: llamada real con su clave. |
-| Motor de flujo, política, aprobaciones, verificación independiente, recuperación, watchdog | Implementado y probado (51 pruebas, incluidas las 16 exigidas). |
+| Motor de flujo, política, aprobaciones, verificación independiente, recuperación, watchdog | Implementado y probado (59 pruebas, incluidas las 16 exigidas). |
 | App Android de simulación | Simulador interno probado. Código fuente APK en `android-sim/` **no compilado** aquí (sin Android SDK). |
 | Flujo supervisado de Free Fire | **Plantilla** con valores `<VERIFICAR>`: el motor se niega a cargarla hasta completarla y validarla. |
 | EXE de Windows | Spec y scripts listos; bundle verificado en Linux. El `.exe` se compila en Windows (`build.ps1`) o en GitHub Actions (`windows-latest`). |
@@ -36,7 +36,7 @@ cd diamantesexpress-agent
 python -m venv .venv; .\.venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
 $env:PYTHONPATH = "src"
-python -m pytest -q                       # 51 pruebas, ninguna hace envíos reales
+python -m pytest -q                       # 59 pruebas, ninguna hace envíos reales
 python -m dxagent simulate --orders 100   # simulación integral aislada
 python -m dxagent doctor                  # diagnóstico (no consume tokens)
 python -m dxagent ui                      # interfaz (inicia el servicio)

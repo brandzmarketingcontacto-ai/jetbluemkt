@@ -64,13 +64,13 @@ def make_settings(**overrides) -> AgentSettings:
     return AgentSettings(**base)
 
 
-def make_agent(db, backend, device, tmp_path, *, settings=None, vision=None, token=TOKEN, bluestacks=None,
+def make_agent(db, backend, device, tmp_path, *, settings=None, vision=None, token=TOKEN, emulator=None,
                engine=None) -> AgentService:
     async def factory():
         return device
 
     return AgentService(settings or make_settings(), db, SecretStore(env={}, use_keyring=False),
-                        api=make_api(backend, token), device_factory=factory, vision=vision, bluestacks=bluestacks,
+                        api=make_api(backend, token), device_factory=factory, vision=vision, emulator=emulator,
                         evidence_root=tmp_path / "evidence", emergency_flag=tmp_path / "EMERGENCY_STOP",
                         live_screenshot=tmp_path / "live.png", engine_overrides=engine or dict(FAST_ENGINE))
 

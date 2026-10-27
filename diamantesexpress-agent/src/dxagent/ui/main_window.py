@@ -163,7 +163,7 @@ class MainWindow(QMainWindow):
         lay.addSpacing(16)
         self.pill_agent = Pill("Agente")
         self.pill_api = Pill("API")
-        self.pill_android = Pill("BlueStacks/Android")
+        self.pill_android = Pill("Emulador")
         self.pill_mode = Pill("Modo")
         for pill in (self.pill_agent, self.pill_api, self.pill_android, self.pill_mode):
             lay.addWidget(pill)
@@ -421,7 +421,8 @@ class MainWindow(QMainWindow):
         if snap["service_alive"]:
             self.pill_api.set("Conectada" if agent.get("api_online") else "Sin conexión",
                               COLORS["ok"] if agent.get("api_online") else COLORS["error"])
-            self.pill_android.set("Disponible" if agent.get("device_ok") else "No disponible",
+            emu = agent.get("emulator") or "Android"
+            self.pill_android.set(f"{emu} · " + ("disponible" if agent.get("device_ok") else "no disponible"),
                                   COLORS["ok"] if agent.get("device_ok") else COLORS["warn"])
             self.pill_mode.set(f"local {agent.get('mode', '—')}", COLORS["accent"])
             if agent.get("state_reason"):

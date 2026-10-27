@@ -8,7 +8,7 @@ import signal
 import sys
 
 from dxagent import paths
-from dxagent.android.bluestacks import BlueStacksManager
+from dxagent.android.emulator import build_emulator
 from dxagent.audit import AuditLog
 from dxagent.android.mock_device import MockDevice
 from dxagent.database import LocalDatabase
@@ -24,21 +24,19 @@ def build_service(manager: SettingsManager | None = None) -> AgentService:
     manager = manager or SettingsManager()
     settings = manager.load()
     db = LocalDatabase(paths.db_path(), audit=AuditLog(paths.logs_dir() / "audit.jsonl"))
-    bluestacks = None
+    emulator = None
     if settings.device_backend == "adb":
-        bluestacks = BlueStacksManager(settings.bluestacks_install_dir, settings.bluestacks_conf_path,
-                                       settings.bluestacks_instance, settings.adb_path, settings.adb_serial,
-                                       settings.adb_command_timeout_seconds)
+        emulator = build_emulator(settings)  # BlueStacks 5 o LDPlayer 9, según Configuración
 
         async def device_factory():
-            return await bluestacks.ensure_ready(settings.emulator_boot_timeout_seconds)
+            return await emulator.ensure_ready(settings.emulator_boot_timeout_seconds)
     else:
         mock = MockDevice()
 
         async def device_factory():
             return mock
 
-    return AgentService(settings, db, manager.secrets, device_factory=device_factory, bluestacks=bluestacks,
+    return AgentService(settings, db, manager.secrets, device_factory=device_factory, emulator=emulator,
                         live_screenshot=paths.data_dir() / "live_screen.png")
 
 
@@ -51,7 +49,8 @@ def run_service() -> int:
         log.error("El servicio ya está en ejecución")
         return 2
     if settings.device_backend == "adb" and not has_interactive_desktop():
-        log.error("BlueStacks requiere una sesión de usuario con escritorio activo; no se puede usar en la sesión 0")
+        log.error("El emulador (%s) requiere una sesión de usuario con escritorio activo; no funciona en la "
+                  "sesión 0", settings.emulator)
     if settings.prevent_sleep:
         prevent_sleep(True)
     try:
