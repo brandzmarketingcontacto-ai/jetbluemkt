@@ -2,7 +2,8 @@
 
 Aplicación de prueba para validar DiamantesExpress Agent sobre BlueStacks 5 o LDPlayer 9 **sin envíos reales**.
 No solicita permisos de red. Sus `resource-id` coinciden con `src/dxagent/android/mock_device.py`
-y con `src/dxagent/resources/workflows/simulation_gift.yaml`.
+y con `simulation_gift.yaml` / `simulation_friend.yaml` (API v1.1: amistad, pestañas pase/caja/token, cantidad con –/+
+y saldo ficticio de diamantes).
 
 > Estado: código fuente escrito pero **no compilado** en el entorno de desarrollo (no había Android SDK).
 > Compílelo en Windows con Android Studio y valide con la lista de `docs/PRUEBAS_WINDOWS.md`.
@@ -24,4 +25,15 @@ y con `src/dxagent/resources/workflows/simulation_gift.yaml`.
 ```
 adb shell am start -n com.diamantesexpress.giftsim/.MainActivity --es outcome failure
 adb shell am start -n com.diamantesexpress.giftsim/.MainActivity --es outcome uncertain
+```
+
+## Simular la amistad y el saldo (v1.1)
+
+El simulador solo deja regalar a jugadores de su lista de amigos, igual que Free Fire. Tras enviar la solicitud
+(fase `friend_request`), el "cliente" la acepta con:
+
+```
+adb shell am start -n com.diamantesexpress.giftsim/.MainActivity --ez accept_friends true
+adb shell am start -n com.diamantesexpress.giftsim/.MainActivity --ei balance 500       # probar saldo insuficiente
+adb shell am start -n com.diamantesexpress.giftsim/.MainActivity --ez require_friendship false
 ```

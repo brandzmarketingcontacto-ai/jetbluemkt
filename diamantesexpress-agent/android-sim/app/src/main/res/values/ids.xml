@@ -1,29 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Deben coincidir con src/dxagent/android/mock_device.py y workflows/simulation_gift.yaml -->
+<!-- Deben coincidir con src/dxagent/android/mock_device.py, simulation_gift.yaml y simulation_friend.yaml -->
 <resources>
     <item name="app_title" type="id" />
+    <item name="tv_balance" type="id" />
     <item name="tv_home" type="id" />
     <item name="btn_start" type="id" />
+    <item name="btn_add_friend" type="id" />
+    <item name="tv_add_friend_label" type="id" />
+    <item name="field_friend_id" type="id" />
+    <item name="btn_friend_search" type="id" />
+    <item name="tv_profile_id" type="id" />
+    <item name="tv_already_friends" type="id" />
+    <item name="btn_send_request" type="id" />
+    <item name="tv_request_sent" type="id" />
+    <item name="tv_request_target" type="id" />
     <item name="tv_recipient_label" type="id" />
     <item name="field_player_id" type="id" />
     <item name="btn_search" type="id" />
     <item name="tv_error" type="id" />
+    <item name="tv_not_friend" type="id" />
     <item name="tv_recipient" type="id" />
+    <item name="tab_pase" type="id" />
+    <item name="tab_caja" type="id" />
+    <item name="tab_token" type="id" />
     <item name="product_pase_booyah" type="id" />
     <item name="product_DIAMANTES_100" type="id" />
     <item name="product_DIAMANTES_310" type="id" />
     <item name="product_DIAMANTES_520" type="id" />
     <item name="product_DIAMANTES_1060" type="id" />
+    <item name="product_caja_tokens_evo_universales" type="id" />
+    <item name="product_token_escorpion" type="id" />
     <item name="tv_confirm_title" type="id" />
     <item name="tv_confirm_recipient" type="id" />
     <item name="tv_confirm_product" type="id" />
     <item name="tv_confirm_product_code" type="id" />
+    <item name="btn_qty_minus" type="id" />
+    <item name="tv_quantity" type="id" />
+    <item name="btn_qty_plus" type="id" />
+    <item name="tv_total_cost" type="id" />
     <item name="btn_confirm" type="id" />
     <item name="btn_cancel" type="id" />
     <item name="tv_processing" type="id" />
     <item name="tv_result_title" type="id" />
     <item name="tv_result_recipient" type="id" />
     <item name="tv_result_product_code" type="id" />
+    <item name="tv_result_quantity" type="id" />
     <item name="tv_result_ref" type="id" />
+    <item name="tv_result_reason" type="id" />
     <item name="btn_done" type="id" />
 </resources>
