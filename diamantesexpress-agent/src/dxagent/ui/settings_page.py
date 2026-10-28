@@ -93,7 +93,9 @@ class SettingsPage(QScrollArea):
         self.agent_name = QLineEdit(s.agent_name)
         self.agent_name.setPlaceholderText("PC-WINDOWS-01 (vacío = nombre del equipo)")
         self.contract = QLineEdit(s.openapi_contract_path)
-        self.contract.setPlaceholderText("Vacío = contrato oficial incluido (OpenAPI 1.0.0 de Horizons)")
+        self.contract.setPlaceholderText("Vacío = contrato oficial incluido (OpenAPI 1.1.0 de Horizons)")
+        self.allow_local = QCheckBox("Permitir HTTP solo hacia esta PC (127.0.0.1) — servidor simulado de pruebas")
+        self.allow_local.setChecked(s.allow_insecure_http_localhost)
         self.poll = dspin(s.poll_interval_seconds, 3600, 1, 1)
         self.heartbeat = dspin(s.heartbeat_interval_seconds, 3600, 1, 5)
         f.addRow("URL de la API", self.api_url)
@@ -101,6 +103,7 @@ class SettingsPage(QScrollArea):
         f.addRow("Contrato OpenAPI", self.contract)
         f.addRow("Consulta de tareas (s)", self.poll)
         f.addRow("Heartbeat (s)", self.heartbeat)
+        f.addRow("", self.allow_local)
         test_btn = QPushButton("Probar conexión (heartbeat, no reclama tareas)")
         test_btn.clicked.connect(self.test_api)
         f.addRow("", test_btn)
@@ -259,6 +262,7 @@ class SettingsPage(QScrollArea):
         data = self.s.model_dump()
         data.update(
             api_url=self.api_url.text(), agent_name=self.agent_name.text().strip(),
+            allow_insecure_http_localhost=self.allow_local.isChecked(),
             emulator=self.selected_emulator(), ldplayer_install_dir=self.ld_dir.text().strip(),
             openapi_contract_path=self.contract.text().strip(), poll_interval_seconds=self.poll.value(),
             heartbeat_interval_seconds=self.heartbeat.value(), device_backend=self.device_backend.currentData()[0],

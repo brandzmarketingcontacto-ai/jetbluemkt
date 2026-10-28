@@ -80,11 +80,7 @@ public class MainActivity extends Activity {
         if (extra != null) outcome = extra;
         requireFriendship = intent.getBooleanExtra("require_friendship", requireFriendship);
         if (intent.hasExtra("balance")) prefs.edit().putInt("balance", intent.getIntExtra("balance", 0)).apply();
-        if (intent.getBooleanExtra("accept_friends", false)) {
-            Set<String> friends = set("friends");
-            friends.addAll(set("pending"));
-            prefs.edit().putStringSet("friends", friends).putStringSet("pending", new HashSet<>()).apply();
-        }
+        if (intent.getBooleanExtra("accept_friends", false)) acceptPending();
     }
 
     private Set<String> set(String key) {
@@ -152,6 +148,18 @@ public class MainActivity extends Activity {
         text(R.id.tv_home, "Simulador de regalos (sin envíos reales)", 16);
         button(R.id.btn_start, "Enviar regalo", v -> showRecipient(null, false));
         button(R.id.btn_add_friend, "Agregar amigo", v -> showAddFriend(null));
+        // Solo para pruebas manuales: hace de "cliente" que acepta las solicitudes pendientes.
+        // El agente nunca pulsa este botón (no está en ningún flujo).
+        button(R.id.btn_sim_accept, "[Prueba] El cliente acepta las solicitudes (" + set("pending").size() + ")", v -> {
+            acceptPending();
+            showHome();
+        });
+    }
+
+    private void acceptPending() {
+        Set<String> friends = set("friends");
+        friends.addAll(set("pending"));
+        prefs.edit().putStringSet("friends", friends).putStringSet("pending", new HashSet<>()).apply();
     }
 
     // ----------------------------------------------------------------- amistad

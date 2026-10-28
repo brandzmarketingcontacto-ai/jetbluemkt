@@ -29,6 +29,7 @@ junto con los tokens y el costo consumidos.
 | EXE de Windows | Spec y scripts listos; bundle verificado en Linux. El `.exe` se compila en Windows (`build.ps1`) o en GitHub Actions (`windows-latest`). |
 
 Nada de lo marcado como pendiente se declara funcionando: ver [docs/PRUEBAS_WINDOWS.md](docs/PRUEBAS_WINDOWS.md).
+Guía paso a paso para probarlo: [docs/GUIA_PRUEBAS.md](docs/GUIA_PRUEBAS.md).
 
 ## Inicio rápido (desarrollo)
 

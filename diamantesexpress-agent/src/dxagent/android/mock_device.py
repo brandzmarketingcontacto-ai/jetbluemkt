@@ -122,7 +122,9 @@ class MockDevice:
         if s == "home":
             els += [Element("tv_home", "Simulador de regalos (sin envíos reales)", (0.05, 0.12, 0.95, 0.18)),
                     Element("btn_start", "Enviar regalo", (0.2, 0.45, 0.8, 0.52), btn, True),
-                    Element("btn_add_friend", "Agregar amigo", (0.2, 0.56, 0.8, 0.63), btn, True)]
+                    Element("btn_add_friend", "Agregar amigo", (0.2, 0.56, 0.8, 0.63), btn, True),
+                    Element("btn_sim_accept", f"[Prueba] El cliente acepta las solicitudes ({len(self.pending_requests)})",
+                            (0.2, 0.8, 0.8, 0.86), btn, True)]
         elif s == "add_friend":
             els += [Element("tv_add_friend_label", "Buscar jugador por ID", (0.05, 0.15, 0.95, 0.2)),
                     Element("field_friend_id", self.friend_input, (0.05, 0.22, 0.95, 0.29), "android.widget.EditText", True),
@@ -268,6 +270,8 @@ class MockDevice:
         self.field_focused = rid in ("field_player_id", "field_friend_id")
         if s == "home" and rid == "btn_start":
             self.screen, self.player_input, self.error_text = "recipient", "", ""
+        elif s == "home" and rid == "btn_sim_accept":
+            self.accept_pending_requests()
         elif s == "home" and rid == "btn_add_friend":
             self.screen, self.friend_input, self.error_text = "add_friend", "", ""
         elif s == "add_friend" and rid == "btn_friend_search":

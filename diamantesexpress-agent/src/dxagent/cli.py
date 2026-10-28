@@ -170,7 +170,8 @@ def cmd_mock_backend(args) -> int:
     server = backend.serve("127.0.0.1", args.port)
     print(f"Backend simulado (contrato real) en http://127.0.0.1:{args.port}/hcgi/api  modo={args.mode}")
     print(f"  DX_AGENT_TOKEN={args.token}")
-    print("  Configure DXAGENT_ALLOW_INSECURE_HTTP_LOCALHOST=true para usarlo (solo pruebas locales).")
+    print("  En Configuración: URL de la API = la dirección de arriba, token = el de arriba y marque")
+    print("  «Permitir HTTP solo hacia esta PC» (solo pruebas locales). Ctrl+C para detener.")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

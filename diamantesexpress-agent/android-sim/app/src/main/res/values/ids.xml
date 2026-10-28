@@ -6,6 +6,7 @@
     <item name="tv_home" type="id" />
     <item name="btn_start" type="id" />
     <item name="btn_add_friend" type="id" />
+    <item name="btn_sim_accept" type="id" />
     <item name="tv_add_friend_label" type="id" />
     <item name="field_friend_id" type="id" />
     <item name="btn_friend_search" type="id" />
