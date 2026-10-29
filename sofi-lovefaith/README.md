@@ -9,6 +9,7 @@ Tienda de joyería, perfumes y detalles de amor y fe. Está en inglés, tiene bo
 ## Instalar en Hostinger
 
 1. **Sube los archivos.** En hPanel ve a **Archivos › Administrador de archivos › public_html**. Sube **el contenido** de esta carpeta `sofi-lovefaith/` (no la carpeta en sí). Lo más fácil es comprimir la carpeta en un .zip, subirlo y usar "Extraer".
+   > **Importante:** el sitio necesita los archivos ocultos `.htaccess` y `.user.ini`. La Mac (Finder) no los muestra, así que si descomprimes en tu computadora y subes los archivos, esos dos se quedan fuera, y `/admin`, `/shop` y las demás páginas muestran "404 This Page Does Not Exist". Sube el `.zip` tal cual y extráelo **dentro de Hostinger**. Si ya subiste los archivos, crea en public_html un archivo nuevo llamado `.htaccess` y pega el contenido del `.htaccess` de este proyecto.
 2. **Versión de PHP.** En hPanel ve a **Avanzado › Configuración de PHP** y elige PHP 8.1 o superior. Revisa que estén activas `pdo_mysql`, `curl`, `gd` y `fileinfo` (vienen activas por defecto).
 3. **Base de datos.** Ya está creada en hPanel › Bases de datos:
    - Base de datos: `u731277802_sofidb`
