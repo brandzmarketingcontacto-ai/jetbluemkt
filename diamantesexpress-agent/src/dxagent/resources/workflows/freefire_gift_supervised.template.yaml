@@ -92,7 +92,7 @@ steps:
   - {id: select_item, kind: tap_option, label: "{product.label}", expect: item_detail}
   - {id: pick_player, kind: tap, element: select_player, expect: friend_picker}
   - {id: focus_search, kind: tap, element: friend_search_field}
-  - {id: type_player, kind: input_text, value: "{recipient.player_id}"}
+  - {id: type_player, kind: input_text, element: friend_search_field, value: "{recipient.player_id}"}
   - id: choose_friend
     kind: tap
     element: friend_result

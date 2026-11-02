@@ -67,6 +67,7 @@ class EngineConfig:
     screen_wait_timeout_s: float = 20.0
     poll_interval_s: float = 0.5
     settle_s: float = 0.3
+    focus_delay_s: float = 0.8   # tras enfocar un campo, antes de escribir (el teclado de LDPlayer/BlueStacks tarda)
     approval_timeout_s: float = 600.0
     min_confidence: float = 0.75
     verify_result_with_ai: bool = False
@@ -399,9 +400,7 @@ class WorkflowEngine:
                 raise StepFailed("BALANCE_UNREADABLE", "No se pudo leer el saldo de diamantes")
             return
         if kind == "input_text":
-            text = render(step.value, ctx)
-            policy.authorize("input_text", text=text, step_id=step.id)
-            await self.device.input_text(text)
+            await self._input_text(step, ctx, policy, observer)
             return
         if kind == "tap_option":
             label = render(step.label, ctx)
@@ -418,6 +417,45 @@ class WorkflowEngine:
             await self._check_fields(step, ctx, obs, observer)
             return
         raise StepFailed("STEP_NOT_SUPPORTED", f"Paso no ejecutable aquí: {kind}", retryable=False)
+
+    async def _input_text(self, step: StepDef, ctx: dict[str, str], policy: ExecutionPolicy,
+                          observer: ScreenObserver) -> None:
+        """Escribe y comprueba que el texto llegó al campo; si no, lo borra y reintenta (también por keyevents).
+
+        Si no se puede escribir es un problema del entorno (teclado del emulador), nunca un error del pedido:
+        antes, un campo vacío hacía que la app respondiera «Jugador no encontrado» y el pedido se daba por fallido.
+        """
+        text = render(step.value, ctx)
+        policy.authorize("input_text", text=text, step_id=step.id)
+        spec = self.wf.elements.get(step.element) if step.element else None
+        if spec is None or not spec.resource_id:
+            await self.device.input_text(text)  # sin campo verificable (p. ej. juego sin jerarquía): verify_fields
+            return
+        seen = ""
+        await asyncio.sleep(self.cfg.focus_delay_s)  # el toque anterior enfoca el campo: darle tiempo al teclado
+        for attempt in range(3):
+            if attempt:
+                obs = await observer.observe(f"Enfocar {step.element}")
+                point, _ = await observer.locate(step.element, obs, f"Localizar {step.element}")
+                await self._tap(policy, obs, point, step)
+                await asyncio.sleep(self.cfg.focus_delay_s)
+                if seen:
+                    await self.device.clear_field(len(seen) + 2)
+            if attempt == 2 and text.isdigit():
+                await self.device.input_digits(text)
+            else:
+                await self.device.input_text(text)
+            await asyncio.sleep(self.cfg.settle_s)
+            obs = await observer.observe(f"Comprobar el texto de {step.element}")
+            node = obs.node(spec.resource_id, None)
+            if node is None:
+                return  # sin jerarquía: los datos se comprueban en verify_fields antes de enviar
+            seen = node.text.strip()
+            if seen == text:
+                return
+            log.warning("El texto no llegó al campo %s (intento %d): se leyó %r", step.element, attempt + 1, seen)
+        raise StepFailed("INPUT_NOT_APPLIED", f"El emulador no aplicó el texto en {step.element} tras 3 intentos "
+                                              "(revise el teclado/método de entrada del emulador)")
 
     def _element_name(self, template: str | None, ctx: dict[str, str], step: StepDef) -> str:
         name = render(template, ctx)

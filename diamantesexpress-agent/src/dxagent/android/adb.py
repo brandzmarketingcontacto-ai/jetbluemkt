@@ -166,6 +166,17 @@ class ADBController:
         validate_text(text)
         await self._shell("input", "text", text.replace(" ", "%s"))
 
+    async def clear_field(self, length: int) -> None:
+        """Borra el campo enfocado: va al final y pulsa DEL `length` veces (máx. 64)."""
+        count = max(0, min(int(length), 64))
+        await self._shell("input", "keyevent", "KEYCODE_MOVE_END", *(["KEYCODE_DEL"] * count))
+
+    async def input_digits(self, digits: str) -> None:
+        """Teclea solo dígitos con keyevents: funciona aunque el teclado del emulador ignore `input text`."""
+        if not digits.isdigit() or len(digits) > 32:
+            raise UnauthorizedOperation("input_digits solo acepta hasta 32 dígitos")
+        await self._shell("input", "keyevent", *(f"KEYCODE_{d}" for d in digits))
+
     async def keyevent(self, key: str) -> None:
         if key not in ALLOWED_KEYS:
             raise UnauthorizedOperation(f"Tecla no permitida: {key}")

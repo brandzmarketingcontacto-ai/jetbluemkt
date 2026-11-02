@@ -46,7 +46,7 @@ steps:
   - {id: reset_to_home, kind: navigate_to, screen: home, via_back: 4}
   - {id: open_add_friend, kind: tap, element: btn_add_friend, expect: add_friend}
   - {id: focus_id, kind: tap, element: field_friend_id}
-  - {id: type_id, kind: input_text, value: "{recipient.player_id}"}
+  - {id: type_id, kind: input_text, element: field_friend_id, value: "{recipient.player_id}"}
   - id: search
     kind: tap
     element: btn_friend_search

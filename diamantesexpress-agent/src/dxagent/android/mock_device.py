@@ -75,6 +75,7 @@ class MockDevice:
     friends: set[str] = field(default_factory=set)
     auto_accept_friends: bool = False        # el cliente acepta la solicitud al instante
     diamond_balance: int = 1_000_000
+    drop_text_inputs: int = 0                # n.º de `input text` que se pierden (teclado del emulador)
 
     def __post_init__(self) -> None:
         self.foreground = LAUNCHER_PACKAGE
@@ -339,6 +340,25 @@ class MockDevice:
     async def input_text(self, text: str) -> None:
         await self._guard()
         validate_text(text)
+        if self.drop_text_inputs > 0:
+            self.drop_text_inputs -= 1
+            return
+        self._type(text)
+
+    async def input_digits(self, digits: str) -> None:
+        await self._guard()
+        if not digits.isdigit():
+            raise UnauthorizedOperation("solo dígitos")
+        self._type(digits)
+
+    async def clear_field(self, length: int) -> None:
+        await self._guard()
+        if self.screen == "recipient" and self.field_focused:
+            self.player_input = self.player_input[:-length] if length else self.player_input
+        elif self.screen == "add_friend" and self.field_focused:
+            self.friend_input = self.friend_input[:-length] if length else self.friend_input
+
+    def _type(self, text: str) -> None:
         if self.screen == "recipient" and self.field_focused:
             self.player_input += text
         elif self.screen == "add_friend" and self.field_focused:

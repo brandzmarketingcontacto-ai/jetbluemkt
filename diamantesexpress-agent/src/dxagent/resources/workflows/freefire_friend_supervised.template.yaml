@@ -59,7 +59,7 @@ steps:
   - {id: friends, kind: tap, element: open_friends, expect: friends}
   - {id: add, kind: tap, element: open_add_friend, expect: add_friend}
   - {id: focus_id, kind: tap, element: search_field}
-  - {id: type_id, kind: input_text, value: "{recipient.player_id}"}
+  - {id: type_id, kind: input_text, element: search_field, value: "{recipient.player_id}"}
   - id: search
     kind: tap
     element: search_button

@@ -32,7 +32,7 @@ from dxagent.settings import AgentSettings, AutomationMode, SecretStore  # noqa:
 
 API_URL = "https://tienda.test/hcgi/api"
 TOKEN = "dxa_test_token_123456"
-FAST_ENGINE = {"settle_s": 0.0, "poll_interval_s": 0.01, "screen_wait_timeout_s": 0.3}
+FAST_ENGINE = {"settle_s": 0.0, "focus_delay_s": 0.0, "poll_interval_s": 0.01, "screen_wait_timeout_s": 0.3}
 
 
 @pytest.fixture

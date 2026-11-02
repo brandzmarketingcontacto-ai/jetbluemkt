@@ -81,7 +81,7 @@ steps:
   - {id: reset_to_home, kind: navigate_to, screen: home, via_back: 4}
   - {id: start, kind: tap, element: btn_start, expect: recipient}
   - {id: focus_player, kind: tap, element: field_player_id}
-  - {id: type_player, kind: input_text, value: "{recipient.player_id}"}
+  - {id: type_player, kind: input_text, element: field_player_id, value: "{recipient.player_id}"}
   - id: search_player
     kind: tap
     element: btn_search

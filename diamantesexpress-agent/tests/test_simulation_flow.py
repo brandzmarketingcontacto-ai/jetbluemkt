@@ -108,3 +108,32 @@ async def test_supervised_server_without_real_workflow_does_not_claim(agent_fact
     assert await agent.work_once() is False
     assert "flujos reales" in agent.state_reason
     assert backend.tasks["task_real"]["status"] == "pending"  # nunca se ejecuta un pedido real con la app ficticia
+
+
+async def test_lost_keyboard_input_is_retried_and_never_blames_the_order(agent_factory, backend, device, db):
+    # LDPlayer: el primer `input text` no llega al campo (quedaba vacío y la app decía «Jugador no encontrado»).
+    device.drop_text_inputs = 1
+    backend.add_task(task_id="t_kb")
+    agent = agent_factory()
+    await agent.startup()
+    await agent.work_once()
+    assert db.get_job("t_kb")["status"] == JobStatus.COMPLETED.value
+    assert device.transactions[0].player_id == "588141749"
+
+
+async def test_input_that_never_lands_is_an_environment_error(agent_factory, backend, device, db):
+    device.drop_text_inputs = 10**6
+
+    async def broken_digits(digits):  # ni siquiera llega por keyevents
+        return None
+    device.input_digits = broken_digits
+    backend.add_task(task_id="t_kb2")
+    agent = agent_factory()
+    await agent.startup()
+    await agent.work_once()
+    row = db.get_job("t_kb2")
+    assert row["error_code"] == "INPUT_NOT_APPLIED"
+    assert row["status"] == JobStatus.RELEASED.value  # no se reporta como fallo del pedido
+    await agent.sync.flush_all()
+    assert "t_kb2" not in backend.results
+    assert device.transactions == []

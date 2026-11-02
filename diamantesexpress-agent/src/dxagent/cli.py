@@ -118,7 +118,7 @@ def cmd_simulate(args) -> int:
         return device
 
     agent = AgentService(settings, db, SecretStore(env={}, use_keyring=False), api=api, device_factory=factory,
-                         engine_overrides={"settle_s": 0.0, "poll_interval_s": 0.01, "screen_wait_timeout_s": 2.0})
+                         engine_overrides={"settle_s": 0.0, "focus_delay_s": 0.0, "poll_interval_s": 0.01, "screen_wait_timeout_s": 2.0})
     clock_offset = [0.0]
     real_clock = backend.clock
     backend.clock = lambda: real_clock() + timedelta(minutes=clock_offset[0])
