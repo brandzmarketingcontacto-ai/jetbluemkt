@@ -10,6 +10,9 @@ if args[:1] == ["devices"]:
     print("List of devices attached\n127.0.0.1:5565\tdevice product:x model:y\n")
     sys.exit(0)
 if args[:1] == ["connect"]:
+    if os.environ.get("FAKE_ADB_CONNECT_FAIL"):
+        print(f"cannot connect to {args[1]}: No connection could be made")
+        sys.exit(0)
     print(f"connected to {args[1]}")
     sys.exit(0)
 if args[:2] == ["-s", "127.0.0.1:5565"]:

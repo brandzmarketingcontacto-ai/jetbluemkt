@@ -200,12 +200,18 @@ class LDPlayerManager:
         info = self.instance_info()
         if info is None:
             raise DeviceDisconnected("No se encontró la instancia de LDPlayer configurada")
-        serials = {d.serial for d in await self.runner.devices() if d.state == "device"}
+        seen = await self.runner.devices()
+        serials = {d.serial for d in seen if d.state == "device"}
         if info.emulator_serial in serials:
             return ADBController(self.runner, info.emulator_serial)
         target = f"127.0.0.1:{info.adb_port}"
-        await self.runner.connect(target)
-        return ADBController(self.runner, target)
+        if await self.runner.connect(target) or target in serials:
+            return ADBController(self.runner, target)
+        listed = ", ".join(f"{d.serial} ({d.state})" for d in seen) or "ninguno"
+        raise DeviceDisconnected(
+            f"ADB no responde en {info.emulator_serial} ni en {target} (dispositivos vistos por adb: {listed}). "
+            "En LDPlayer active Configuración → Otros ajustes → Depuración ADB → «Abrir conexión local», "
+            "guarde y reinicie LDPlayer.")
 
     async def ensure_ready(self, boot_timeout: float = 180.0, poll: float = 3.0) -> ADBController:
         """Abre LDPlayer si está cerrado y espera a que Android termine de arrancar."""
@@ -218,6 +224,8 @@ class LDPlayerManager:
                 device = await self.connect()
                 if await device.boot_completed():
                     return device
+                last_error = DeviceError(f"conectado a {device.serial}, pero Android no respondió como iniciado "
+                                         "(sys.boot_completed distinto de 1)")
             except DeviceError as exc:
                 last_error = exc
             await asyncio.sleep(poll)

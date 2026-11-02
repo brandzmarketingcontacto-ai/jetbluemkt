@@ -248,6 +248,8 @@ class BlueStacksManager:
                 device = await self.connect()
                 if await device.boot_completed():
                     return device
+                last_error = DeviceError(f"conectado a {device.serial}, pero Android no respondió como iniciado "
+                                         "(sys.boot_completed distinto de 1)")
             except DeviceError as exc:
                 last_error = exc
             await asyncio.sleep(poll)

@@ -78,6 +78,17 @@ async def test_connect_uses_emulator_serial_or_local_port(ld_dir, tmp_path, monk
     assert ["connect", "127.0.0.1:5555"] in calls
 
 
+async def test_connect_failure_explains_how_to_enable_adb(ld_dir, tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_ADB_LOG", str(tmp_path / "adb.log"))
+    monkeypatch.setenv("FAKE_ADB_CONNECT_FAIL", "1")
+    manager = LDPlayerManager(str(ld_dir), instance="0", console_runner=FakeConsole(), registry=lambda: None)
+    from dxagent.android.adb import AdbRunner
+    manager.runner = AdbRunner([sys.executable, str(Path(__file__).with_name("fake_adb.py"))], timeout=10)
+    with pytest.raises(DeviceError, match="Abrir conexión local") as info:
+        await manager.connect()
+    assert "127.0.0.1:5555" in str(info.value) and "127.0.0.1:5565 (device)" in str(info.value)
+
+
 def test_factory_selects_emulator_from_settings(ld_dir):
     s = make_settings(emulator="ldplayer", ldplayer_install_dir=str(ld_dir), emulator_instance="1")
     assert build_emulator(s).name == "ldplayer"
