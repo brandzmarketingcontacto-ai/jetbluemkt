@@ -79,3 +79,32 @@ def test_detect_emulator_always_gives_feedback(qtbot_free_app, monkeypatch):
     assert "0 (LDPlayer, puerto 5555)" in page.emu_info.text()
     assert page.emu_instance.currentText() == "0"
     assert page.ld_dir.text() == r"C:\LDPlayer\LDPlayer9"
+
+
+def test_mouse_wheel_never_changes_settings(qtbot_free_app):
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtWidgets import QApplication
+
+    from dxagent.settings import SettingsManager
+    from dxagent.ui.settings_page import SettingsPage
+
+    def wheel(widget, delta):
+        event = QWheelEvent(QPointF(5, 5), QPointF(5, 5), QPoint(0, 0), QPoint(0, delta), Qt.NoButton, Qt.NoModifier,
+                            Qt.NoScrollPhase, False)
+        QApplication.sendEvent(widget, event)
+
+    page = SettingsPage(SettingsManager())
+    page.show()
+    mode, budget, requests = page.mode.currentIndex(), page.daily_budget.value(), page.max_requests.value()
+    for widget in (page.mode, page.daily_budget, page.max_requests):
+        widget.setFocus()
+        wheel(widget, -120)
+    assert page.mode.currentIndex() == mode
+    assert page.daily_budget.value() == budget
+    assert page.max_requests.value() == requests
+
+    page.daily_budget.removeEventFilter(page._ignore_wheel)  # sin el filtro, Qt sí cambia el valor
+    wheel(page.daily_budget, -120)
+    assert page.daily_budget.value() != budget
+    page.close()

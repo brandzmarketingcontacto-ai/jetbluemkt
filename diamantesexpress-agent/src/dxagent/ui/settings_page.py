@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Callable
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout, QLabel,
+from PySide6.QtCore import QEvent, QObject, QRunnable, QThreadPool, Signal
+from PySide6.QtWidgets import (QAbstractSpinBox, QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout, QLabel,
                                QLineEdit, QMessageBox, QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget)
 
 from dxagent import paths
@@ -52,6 +52,16 @@ def run_in_background(fn, callback) -> None:
     _PENDING.add(signals)
     signals.done.connect(lambda *_: _PENDING.discard(signals))
     QThreadPool.globalInstance().start(task)
+
+
+class _IgnoreWheel(QObject):
+    """La rueda desplaza la página: nunca cambia un valor (modo, presupuesto, límites) por accidente."""
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.Wheel:
+            event.ignore()  # sin aceptar: Qt lo pasa al contenedor y la página se desplaza
+            return True
+        return super().eventFilter(watched, event)
 
 
 def section(title: str) -> tuple[QFrame, QFormLayout]:
@@ -268,6 +278,10 @@ class SettingsPage(QScrollArea):
             note.setWordWrap(True)
             lay.addWidget(note)
         lay.addStretch(1)
+
+        self._ignore_wheel = _IgnoreWheel(self)
+        for field in inner.findChildren(QAbstractSpinBox) + inner.findChildren(QComboBox):
+            field.installEventFilter(self._ignore_wheel)
 
     # ------------------------------------------------------------- acciones
     def collect(self) -> AgentSettings:
