@@ -379,6 +379,34 @@ async def test_13b_definitive_failure(agent_factory, backend, device, db):
     assert row["status"] == JobStatus.FAILED.value and row["error_code"] == "DELIVERY_REJECTED"
 
 
+async def test_13c_option_list_still_redrawing_is_retried(agent_factory, backend, device, db):
+    """Si la lista aún no se dibujó tras pulsar la pestaña, se reintenta el paso en vez de liberar la tarea."""
+    on_tap, dump_ui, stale = device._on_tap, device.dump_ui, []
+
+    def tap_spy(rid):
+        on_tap(rid)
+        if rid.startswith("tab_"):
+            stale.append(True)
+
+    async def dump_spy():
+        if not stale:
+            return await dump_ui()
+        stale.clear()
+        tab, device.tab = device.tab, "sin_productos"
+        try:
+            return await dump_ui()
+        finally:
+            device.tab = tab
+
+    device._on_tap, device.dump_ui = tap_spy, dump_spy
+    backend.add_task(task_id="task_13c")
+    agent = agent_factory()
+    await agent.startup()
+    await agent.work_once()
+    assert db.get_job("task_13c")["status"] == JobStatus.COMPLETED.value
+    assert len(device.transactions) == 1
+
+
 # 14 ----------------------------------------------------------------------------
 async def test_14_repeated_heartbeat(agent_factory, backend):
     agent = agent_factory()

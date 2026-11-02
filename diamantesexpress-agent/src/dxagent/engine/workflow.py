@@ -385,6 +385,8 @@ class WorkflowEngine:
             elif step.exits:
                 await asyncio.sleep(self.cfg.settle_s)
                 self._check_exits(step, await observer.observe(f"Comprobar el resultado de {element}"))
+            else:
+                await asyncio.sleep(self.cfg.settle_s)  # el paso siguiente no debe leer la pantalla anterior al toque
             return
         if kind == "set_quantity":
             await self._set_quantity(job, step, ctx, policy, observer)
@@ -407,7 +409,13 @@ class WorkflowEngine:
             obs = await observer.observe(f"Seleccionar la opción '{label}'")
             if step.expect and obs.screen_id == step.expect:
                 return
-            point, _ = await observer.locate_option(label, obs, f"Seleccionar '{label}'")
+            try:
+                point, _ = await observer.locate_option(label, obs, f"Seleccionar '{label}'")
+            except ObservationError as exc:
+                if exc.code != "OPTION_NOT_FOUND":
+                    raise
+                await asyncio.sleep(self.cfg.settle_s)  # la lista puede estar redibujándose: reintento antes del envío
+                raise StepFailed(exc.code, str(exc)) from exc
             await self._tap(policy, obs, point, step)
             if step.expect:
                 await self._wait_for(observer, {step.expect}, f"Esperar {step.expect}")
