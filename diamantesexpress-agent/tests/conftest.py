@@ -149,3 +149,24 @@ def fake_openai_factory():
 
 def project_root() -> Path:
     return Path(__file__).resolve().parents[1]
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Cierra Qt de forma ordenada antes de que Python finalice.
+
+    En Windows, CI terminó dos veces con código 1 después de "N passed" sin ningún mensaje: un cierre desordenado
+    de Qt (hilos del QThreadPool o ventanas vivas al finalizar el intérprete) es la causa más probable.
+    """
+    try:
+        from PySide6.QtCore import QThreadPool
+        from PySide6.QtWidgets import QApplication
+    except ImportError:
+        return
+    app = QApplication.instance()
+    if app is None:
+        return
+    QThreadPool.globalInstance().waitForDone(5000)
+    for widget in app.topLevelWidgets():
+        widget.close()
+        widget.deleteLater()
+    app.processEvents()

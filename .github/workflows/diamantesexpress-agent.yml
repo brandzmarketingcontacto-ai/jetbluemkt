@@ -54,7 +54,13 @@ jobs:
       - name: Pruebas (sin envíos reales)
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m pytest -q
+        shell: pwsh
+        run: |
+          # faulthandler del intérprete (no el de pytest) para ver un posible fallo al cerrar Python.
+          python -X faulthandler -m pytest -q -p no:faulthandler --junitxml=pytest-report.xml
+          $code = $LASTEXITCODE
+          Write-Host "pytest terminó con código $code"
+          exit $code
       - name: Compilar EXE
         run: |
           python packaging/make_icon.py
