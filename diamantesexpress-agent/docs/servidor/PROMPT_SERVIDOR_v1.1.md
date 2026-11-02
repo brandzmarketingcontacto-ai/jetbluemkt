@@ -1,6 +1,6 @@
-# Prompt para Hostinger Horizons — API del agente v1.1 (productos, cantidades y amistad)
+# Prompt para el servidor de diamantesexpress.com — API del agente v1.1 (productos, cantidades y amistad)
 
-Copiar y pegar en Horizons tal cual.
+Copiar y pegar tal cual en la herramienta con la que se desarrolla el sitio diamantesexpress.com.
 
 ---
 

@@ -1,8 +1,8 @@
-"""Contrato de la API real de DiamantesExpress (Hostinger Horizons).
+"""Contrato de la API real de DiamantesExpress (diamantesexpress.com).
 
-El OpenAPI publicado por Horizons (`GET /automation/openapi`) no define operationId, así que el
+El OpenAPI publicado por DiamantesExpress (`GET /automation/openapi`) no define operationId, así que el
 agente identifica cada operación por MÉTODO + RUTA y comprueba al cargar el documento que todas
-las rutas que necesita existen. Si Horizons cambia una ruta, `doctor` lo detecta y se puede
+las rutas que necesita existen. Si DiamantesExpress cambia una ruta, `doctor` lo detecta y se puede
 ajustar con `route_overrides` sin recompilar.
 """
 

@@ -13,7 +13,7 @@
 #    en su cuenta. Si no lo permiten, no lo habilite.
 #  - El paso `commit` (botón de precio, descuenta diamantes) SIEMPRE requiere aprobación humana en SUPERVISADO.
 #  - AUTHORIZED_PRODUCTION solo es posible con `authorization.authorized: true`, una referencia de autorización y el
-#    modo `production` activado por el SUPER_ADMIN en Horizons.
+#    modo `production` activado por el SUPER_ADMIN en DiamantesExpress.
 #
 # Para activarlo: copie este archivo a %LOCALAPPDATA%\DiamantesExpressAgent\config\workflows\
 # como freefire_gift_supervised.yaml, complete los valores y configure «Flujo de regalo» en Configuración.
@@ -36,7 +36,7 @@ app:
 
 order_rules:
   player_id_pattern: "<VERIFICAR: formato oficial del ID de jugador>"
-  # Se usa el gameItemName exacto del catálogo agent_products de Horizons (p. ej. «Pase Booyah Premium»).
+  # Se usa el gameItemName exacto del catálogo agent_products de DiamantesExpress (p. ej. «Pase Booyah Premium»).
   accept_server_catalog: true
   default_category: pase
   products: {}

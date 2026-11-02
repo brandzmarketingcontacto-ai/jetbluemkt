@@ -9,7 +9,7 @@
 │  │  - lee en un QThread│── comandos ──►│  control · heartbeat · sync · work   │  │
 │  │  - bandeja          │  aprobaciones │  · watchdog                          │  │
 │  │  - relanza servicio │               │                                      │  │
-│  └─────────────────────┘               │ JobQueueManager ─► HorizonsApiClient ─┼──► HTTPS DiamantesExpress
+│  └─────────────────────┘               │ JobQueueManager ─► DiamantesExpressApiClient ─┼──► HTTPS DiamantesExpress
 │                                        │ WorkflowEngine                       │  │
 │                                        │  ├ ExecutionPolicy / ApprovalManager │  │
 │                                        │  ├ ScreenObserver (jerarquía UI →    │  │
@@ -28,7 +28,7 @@
 |---|---|
 | DesktopUI | `ui/main_window.py`, `ui/settings_page.py`, `ui/data_worker.py`, `ui/theme.py` |
 | AgentService | `service/agent.py`, `service/bootstrap.py` |
-| HorizonsApiClient | `api/client.py`, `api/contract.py`, `api/errors.py` (simulador: `api/mock_backend.py`) |
+| DiamantesExpressApiClient | `api/client.py`, `api/contract.py`, `api/errors.py` (simulador: `api/mock_backend.py`) |
 | JobQueueManager | `service/job_queue.py` (+ `service/sync.py`: outbox) |
 | BlueStacksManager / LDPlayerManager | `android/bluestacks.py`, `android/ldplayer.py`; selección en `android/emulator.py` |
 | ADBController | `android/adb.py`, `android/device.py` (simulador: `android/mock_device.py`) |
@@ -46,7 +46,7 @@
 | SettingsManager | `settings.py` |
 | Windows | `winplatform.py` (inicio automático, suspensión, instancia única, sesión interactiva) |
 
-## Ciclo de una tarea (contrato oficial de Horizons)
+## Ciclo de una tarea (contrato oficial de DiamantesExpress)
 
 1. `POST /agent/heartbeat` → modo y pausa del servidor. Solo se reclama si son compatibles con el modo local.
 2. `POST /agent/tasks/claim` (CAS + lease) → validación Pydantic → descarte de duplicados (tarea o pedido ya
@@ -55,7 +55,7 @@
 4. Pasos previos (abrir app, navegar, escribir destinatario, elegir producto), con progreso `processing`
    (renueva el lease) y un vigilante que mantiene el lease durante las esperas.
 5. `verify_fields`: lo que se ve en pantalla debe coincidir con la tarea.
-6. Progreso en vivo justo antes de enviar: si Horizons responde 409, no se envía.
+6. Progreso en vivo justo antes de enviar: si DiamantesExpress responde 409, no se envía.
 7. Aprobación según el modo (humana en SUPERVISADO, con nombre del operador).
 8. Checkpoint durable `commit_started` → **un único toque** → `commit_sent` → progreso `verifying`.
 9. `verify_result`: pantalla de éxito + datos del resultado + referencia (→ `giftCode`); IA opcional como segunda

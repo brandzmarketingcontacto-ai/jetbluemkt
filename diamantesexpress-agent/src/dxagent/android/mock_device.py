@@ -22,7 +22,7 @@ from dxagent.android.device import (ALLOWED_KEYS, DeviceDisconnected, DeviceTime
 SIM_PACKAGE = "com.diamantesexpress.giftsim"
 SIM_ACTIVITY = ".MainActivity"
 LAUNCHER_PACKAGE = "com.android.launcher3"
-# (kind, texto visible, pestaña, diamantes por unidad, máximo por envío). Imitan el catálogo de Horizons v1.1.
+# (kind, texto visible, pestaña, diamantes por unidad, máximo por envío). Imitan el catálogo de DiamantesExpress v1.1.
 SIM_PRODUCTS = [
     ("pase_booyah", "Pase Booyah Premium", "pase", 300, 1),
     ("DIAMANTES_100", "100 Diamantes", "pase", 10, 1),

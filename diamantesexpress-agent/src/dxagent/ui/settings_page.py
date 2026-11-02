@@ -87,13 +87,13 @@ class SettingsPage(QScrollArea):
         s = self.s
 
         # --- API
-        box, f = section("Conexión con DiamantesExpress (Hostinger Horizons)")
+        box, f = section("Conexión con DiamantesExpress (diamantesexpress.com)")
         self.api_url = QLineEdit(s.api_url)
         self.api_url.setPlaceholderText("https://<dominio-publicado>/hcgi/api")
         self.agent_name = QLineEdit(s.agent_name)
         self.agent_name.setPlaceholderText("PC-WINDOWS-01 (vacío = nombre del equipo)")
         self.contract = QLineEdit(s.openapi_contract_path)
-        self.contract.setPlaceholderText("Vacío = contrato oficial incluido (OpenAPI 1.1.0 de Horizons)")
+        self.contract.setPlaceholderText("Vacío = contrato oficial incluido (OpenAPI 1.1.0 de DiamantesExpress)")
         self.allow_local = QCheckBox("Permitir HTTP solo hacia esta PC (127.0.0.1) — servidor simulado de pruebas")
         self.allow_local.setChecked(s.allow_insecure_http_localhost)
         self.poll = dspin(s.poll_interval_seconds, 3600, 1, 1)
@@ -323,11 +323,11 @@ class SettingsPage(QScrollArea):
                                 "se mantendrá en memoria hasta cerrar la aplicación.")
 
     def _api_client(self):
-        from dxagent.api.client import HorizonsApiClient
+        from dxagent.api.client import DiamantesExpressApiClient
         from dxagent.api.contract import ApiContract
         s = self.collect()
         contract = ApiContract.load(s.openapi_contract_path or None, s.route_overrides)
-        return HorizonsApiClient(s.api_url, self.manager.secrets.get("agent_token"), contract,
+        return DiamantesExpressApiClient(s.api_url, self.manager.secrets.get("agent_token"), contract,
                                  agent_name=s.agent_name, timeout=s.api_timeout_seconds,
                                  allow_insecure_localhost=s.allow_insecure_http_localhost)
 

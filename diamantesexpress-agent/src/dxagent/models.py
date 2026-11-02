@@ -68,7 +68,7 @@ class Product(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     quantity: int = Field(default=1, ge=1, le=10000)
     category: str | None = None              # pase | caja | token (pestaña de regalos del juego)
-    game_item_name: str | None = None        # texto EXACTO del artículo en el juego (catálogo de Horizons)
+    game_item_name: str | None = None        # texto EXACTO del artículo en el juego (catálogo de DiamantesExpress)
     unit_diamond_cost: int | None = None
     max_per_transaction: int | None = None
 
@@ -88,7 +88,7 @@ class Job(BaseModel):
     lease_expires_at: datetime | None = None
     created_at: datetime | None = None
     simulated: bool = False          # True = NO tocar el juego ni el pedido real
-    server_mode: str | None = None   # off | simulation | supervised | production (lo decide Horizons)
+    server_mode: str | None = None   # off | simulation | supervised | production (lo decide DiamantesExpress)
     phase: str = "gift"              # friend_request (fase A) | gift (fase B)
     chunk_index: int = 0             # 0-based
     chunk_count: int = 1
@@ -104,12 +104,12 @@ class Job(BaseModel):
 
     @property
     def dedupe_key(self) -> str:
-        """Una tarea por pedido, fase y chunk (Horizons divide los regalos por maxPerTransaction)."""
+        """Una tarea por pedido, fase y chunk (DiamantesExpress divide los regalos por maxPerTransaction)."""
         return f"{self.order_id}:{self.phase}:{self.chunk_index}"
 
     @classmethod
     def from_task(cls, task: dict[str, Any], *, simulate: bool = False, mode: str | None = None) -> "Job":
-        """Convierte una tarea de `/agent/tasks/claim` (esquema Task de Horizons) en un Job interno."""
+        """Convierte una tarea de `/agent/tasks/claim` (esquema Task de DiamantesExpress) en un Job interno."""
         task_mode = task.get("mode") or mode
         kind = str(task.get("kind") or "")
 
@@ -143,7 +143,7 @@ class Job(BaseModel):
 
 
 class ApiUsage(BaseModel):
-    """Bloque `usage` del resultado (esquema Usage de Horizons)."""
+    """Bloque `usage` del resultado (esquema Usage de DiamantesExpress)."""
     model: str
     prompt_tokens: int = 0
     completion_tokens: int = 0

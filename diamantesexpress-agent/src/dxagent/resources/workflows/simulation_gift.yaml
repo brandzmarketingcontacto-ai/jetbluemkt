@@ -13,7 +13,7 @@ app:
 
 order_rules:
   player_id_pattern: '^[0-9]{5,15}$'
-  # Con accept_server_catalog se usa el gameItemName del catálogo de Horizons (agent_products).
+  # Con accept_server_catalog se usa el gameItemName del catálogo de DiamantesExpress (agent_products).
   accept_server_catalog: true
   default_category: pase   # tareas v1.0 sin categoría
   products:            # kind -> texto visible (para tareas sin gameItemName)

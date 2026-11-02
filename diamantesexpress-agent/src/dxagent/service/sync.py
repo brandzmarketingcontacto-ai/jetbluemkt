@@ -11,7 +11,7 @@ import json
 import logging
 import time
 
-from dxagent.api.client import HorizonsApiClient
+from dxagent.api.client import DiamantesExpressApiClient
 from dxagent.api.errors import ApiError, ApiUnavailable, AuthError, ConflictError, NotFoundError
 from dxagent.database import LocalDatabase
 
@@ -20,7 +20,7 @@ MAX_BACKOFF = 300.0
 
 
 class OutboxSync:
-    def __init__(self, db: LocalDatabase, api: HorizonsApiClient, clock=time.time):
+    def __init__(self, db: LocalDatabase, api: DiamantesExpressApiClient, clock=time.time):
         self.db = db
         self.api = api
         self.clock = clock

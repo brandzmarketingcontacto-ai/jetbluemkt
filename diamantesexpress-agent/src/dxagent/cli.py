@@ -55,7 +55,7 @@ def cmd_doctor(_args) -> int:
         report["contract"] = f"ERROR: {exc}"
     report["api_url"] = s.api_url or "NO CONFIGURADA"
     if s.api_url and not s.api_url.rstrip("/").endswith("/hcgi/api"):
-        report["api_url_warning"] = "La URL de Horizons normalmente termina en /hcgi/api"
+        report["api_url_warning"] = "La URL de DiamantesExpress normalmente termina en /hcgi/api"
     token = manager.secrets.get("agent_token") or ""
     if token and not token.startswith("dxa_"):
         report["agent_token_warning"] = "Los tokens de DiamantesExpress empiezan con dxa_"
@@ -86,9 +86,9 @@ def cmd_simulate(args) -> int:
     home = Path(args.home or tempfile.mkdtemp(prefix="dxagent-sim-"))
     os.environ["DXAGENT_HOME"] = str(home)
     from dxagent import paths
-    from dxagent.api.client import HorizonsApiClient
+    from dxagent.api.client import DiamantesExpressApiClient
     from dxagent.api.contract import ApiContract
-    from dxagent.api.mock_backend import MockHorizonsBackend
+    from dxagent.api.mock_backend import MockDiamantesExpressBackend
     from dxagent.android.mock_device import MockDevice
     from dxagent.database import LocalDatabase
     from dxagent.logging_setup import setup_logging
@@ -96,7 +96,7 @@ def cmd_simulate(args) -> int:
     from dxagent.settings import AgentSettings, AutomationMode, SecretStore
 
     setup_logging(paths.logs_dir(), "simulate", logging.WARNING)
-    backend = MockHorizonsBackend(mode="simulation")
+    backend = MockDiamantesExpressBackend(mode="simulation")
     # Pedidos v1.1 de dos fases (amistad + regalo). Las cantidades altas se dividen por maxPerTransaction.
     kinds = list(backend.catalog)
     expected: dict[str, int] = {}
@@ -111,7 +111,7 @@ def cmd_simulate(args) -> int:
     settings = AgentSettings(api_url="https://mock.local/hcgi/api", agent_name="simulador",
                              automation_mode=AutomationMode.SIMULATION, vision_backend="disabled",
                              poll_interval_seconds=0.01)
-    api = HorizonsApiClient(settings.api_url, "dxa_test_token_123456", ApiContract.load(), agent_name="simulador",
+    api = DiamantesExpressApiClient(settings.api_url, "dxa_test_token_123456", ApiContract.load(), agent_name="simulador",
                             transport=backend.transport())
 
     async def factory():
@@ -159,9 +159,9 @@ def cmd_simulate(args) -> int:
 
 
 def cmd_mock_backend(args) -> int:
-    from dxagent.api.mock_backend import MockHorizonsBackend
+    from dxagent.api.mock_backend import MockDiamantesExpressBackend
 
-    backend = MockHorizonsBackend(token=args.token, mode=args.mode)
+    backend = MockDiamantesExpressBackend(token=args.token, mode=args.mode)
     backend.friend_retry_minutes = args.friend_retry_minutes
     kinds = list(backend.catalog)
     for i in range(args.jobs):
@@ -181,7 +181,7 @@ def cmd_mock_backend(args) -> int:
 
 def cmd_check_api(_args) -> int:
     """Heartbeat + tareas actuales. No reclama tareas ni modifica pedidos."""
-    from dxagent.api.client import HorizonsApiClient
+    from dxagent.api.client import DiamantesExpressApiClient
     from dxagent.api.contract import ApiContract
     from dxagent.settings import SettingsManager
 
@@ -189,7 +189,7 @@ def cmd_check_api(_args) -> int:
     s = manager.load()
 
     async def go():
-        client = HorizonsApiClient(s.api_url, manager.secrets.get("agent_token"),
+        client = DiamantesExpressApiClient(s.api_url, manager.secrets.get("agent_token"),
                                    ApiContract.load(s.openapi_contract_path or None, s.route_overrides),
                                    agent_name=s.agent_name, timeout=s.api_timeout_seconds,
                                    allow_insecure_localhost=s.allow_insecure_http_localhost)

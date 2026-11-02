@@ -395,7 +395,7 @@ class LocalDatabase:
                    (iso_now(), level, category, message, job_id))
 
     def add_alert(self, key: str, level: str, code: str, message: str, job_id: str | None = None) -> bool:
-        """Alerta local deduplicada por clave (la API de Horizons no tiene endpoint de alertas)."""
+        """Alerta local deduplicada por clave (la API de DiamantesExpress no tiene endpoint de alertas)."""
         try:
             self._exec("INSERT INTO alert_keys(key, created_at) VALUES (?,?)", (key, iso_now()))
         except sqlite3.IntegrityError:

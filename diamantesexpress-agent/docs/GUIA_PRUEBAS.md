@@ -35,7 +35,7 @@ Esperado: `simulate` termina con `"pedidos_incompletos": []` y `"duplicados": 0`
 
 Si algo falla, guarde la salida de `doctor` y la carpeta de registros (*Registros → Abrir carpeta*).
 
-## Etapa 3 — Pedido completo con el servidor simulado local (sin Horizons)
+## Etapa 3 — Pedido completo con el servidor simulado local (sin DiamantesExpress)
 
 1. Abra una terminal en la carpeta de instalación y deje corriendo:
    ```
@@ -62,15 +62,15 @@ Igual que la Etapa 3, pero con *Modo de operación* = **Supervisado**: antes de 
 la tarjeta *Aprobación requerida* con destinatario, producto, cantidad y costo. Pruebe **Aprobar envío** y
 **Rechazar** (rechazado = no se envía nada).
 
-## Etapa 5 — Conexión con Horizons (tienda real, tareas simuladas)
+## Etapa 5 — Conexión con DiamantesExpress (tienda real, tareas simuladas)
 
-1. En Horizons: *Automatización* → modo **simulation**; cree un token del agente (`dxa_…`, se muestra una vez);
+1. En DiamantesExpress: *Automatización* → modo **simulation**; cree un token del agente (`dxa_…`, se muestra una vez);
    configure nombre e ID de la cuenta emisora.
 2. En el programa: URL `https://<su-dominio>/hcgi/api`, **desmarque** la casilla de HTTP local, pegue el token y
    **Probar conexión**.
-3. En Horizons cree una tarea con *Simular*. El bot la reclama, la ejecuta en la app ficticia y Horizons muestra
+3. En DiamantesExpress cree una tarea con *Simular*. El bot la reclama, la ejecuta en la app ficticia y DiamantesExpress muestra
    el resultado con consumo (`usage`) y evidencia (hashes).
-   Nota: `/automation/simulate` de Horizons aún no permite elegir producto, cantidad ni fase.
+   Nota: `/automation/simulate` de DiamantesExpress aún no permite elegir producto, cantidad ni fase.
 
 ## Etapa 6 — OpenAI (opcional en simulación)
 

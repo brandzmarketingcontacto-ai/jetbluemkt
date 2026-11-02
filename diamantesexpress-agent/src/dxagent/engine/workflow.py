@@ -448,7 +448,7 @@ class WorkflowEngine:
 
     async def _check_fields(self, step: StepDef, ctx: dict[str, str], obs: Observation,
                             observer: ScreenObserver) -> dict[str, Any]:
-        # Un valor esperado vacío (p. ej. costo total cuando Horizons no envía unitDiamondCost) no se comprueba.
+        # Un valor esperado vacío (p. ej. costo total cuando DiamantesExpress no envía unitDiamondCost) no se comprueba.
         expected = {name: v for name, tpl in step.checks.items() if (v := render(tpl, ctx)) != ""}
         values, method = await observer.read_fields(list(expected), obs, "Leer los datos visibles")
         mismatches = {k: {"esperado": v, "en_pantalla": values.get(k)} for k, v in expected.items()
@@ -476,7 +476,7 @@ class WorkflowEngine:
         checked = await self._check_fields(verify_step, ctx, obs, observer)
         total_cost = ctx.get("product.total_cost") or ""
         if self.balance is not None and total_cost and self.balance < int(total_cost):
-            # No se envía: el agente reporta el saldo en el heartbeat y Horizons deja de entregar regalos.
+            # No se envía: el agente reporta el saldo en el heartbeat y DiamantesExpress deja de entregar regalos.
             raise StepFailed("INSUFFICIENT_BALANCE", f"Saldo de diamantes insuficiente: hay {self.balance}, "
                              f"se necesitan {total_cost}", retryable=False)
         evidence_ids = self._capture(job, obs, "resumen_previo")

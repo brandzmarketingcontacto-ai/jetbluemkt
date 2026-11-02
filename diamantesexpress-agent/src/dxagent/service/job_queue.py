@@ -1,6 +1,6 @@
 """JobQueueManager: reclamación atómica (`/agent/tasks/claim`), validación y cierre de tareas.
 
-Reglas del contrato real de Horizons:
+Reglas del contrato real de DiamantesExpress:
 - El servidor entrega la siguiente tarea con un lease. Para devolverla sin ejecutar, el agente
   simplemente deja vencer el lease: el servidor la reintenta hasta maxAttempts y luego la pasa a
   manual_review. No existe un endpoint de liberación.
@@ -16,7 +16,7 @@ from pydantic import ValidationError
 
 from dxagent import __version__
 from dxagent.ai.usage import usage_for_result
-from dxagent.api.client import ClaimResult, HorizonsApiClient
+from dxagent.api.client import ClaimResult, DiamantesExpressApiClient
 from dxagent.database import LocalDatabase
 from dxagent.engine.evidence import EvidenceManager
 from dxagent.models import Job, JobOutcome, JobStatus, iso_now
@@ -30,7 +30,7 @@ def result_key(job_id: str, local_attempt: int) -> str:
 
 
 class JobQueueManager:
-    def __init__(self, db: LocalDatabase, api: HorizonsApiClient, instance: str, account_key: str,
+    def __init__(self, db: LocalDatabase, api: DiamantesExpressApiClient, instance: str, account_key: str,
                  evidence: EvidenceManager | None = None, default_model: str = ""):
         self.db = db
         self.api = api
@@ -95,7 +95,7 @@ class JobQueueManager:
             self.db.reclaim_job(job.job_id, payload)
         else:
             if self.db.order_active_or_done(job.dedupe_key):
-                # Horizons garantiza una tarea por pedido, fase y chunk; si aun así llega otra, un humano decide.
+                # DiamantesExpress garantiza una tarea por pedido, fase y chunk; si aun así llega otra, un humano decide.
                 self.db.insert_job(job.job_id, job.order_id, payload, self.instance, self.account_key,
                                    order_key=f"{job.dedupe_key}:dup:{job.job_id}", phase=job.phase,
                                    quantity=job.product.quantity)
@@ -153,12 +153,12 @@ class JobQueueManager:
             if outcome.friend_status:
                 body["friendStatus"] = outcome.friend_status
         elif outcome.status == JobStatus.COMPLETED:
-            # Horizons exige deliveredQuantity == quantity para aceptar completed en la fase gift.
+            # DiamantesExpress exige deliveredQuantity == quantity para aceptar completed en la fase gift.
             body["deliveredQuantity"] = outcome.delivered_quantity if outcome.delivered_quantity is not None \
                 else job.product.quantity
         elif outcome.status == JobStatus.FAILED:
             body["deliveredQuantity"] = 0
-        # uncertain: no se informa cantidad (no se sabe); Horizons lo pasa a revisión manual.
+        # uncertain: no se informa cantidad (no se sabe); DiamantesExpress lo pasa a revisión manual.
         if outcome.error_code:
             body["errorCode"] = outcome.error_code[:60]
             body["errorMessage"] = (outcome.message or outcome.error_code)[:500]
@@ -180,7 +180,7 @@ class JobQueueManager:
             outcome.status = JobStatus.RELEASED
             self.db.update_job(job.job_id, status=JobStatus.RELEASED)
         if outcome.status == JobStatus.RELEASED:
-            # Nada se ejecutó: no se reporta resultado; al vencer el lease Horizons reintenta (hasta maxAttempts).
+            # Nada se ejecutó: no se reporta resultado; al vencer el lease DiamantesExpress reintenta (hasta maxAttempts).
             pass
         elif outcome.status == JobStatus.DEFERRED:
             # Nada se ejecutó: se aplaza (no consume maxAttempts) hasta el próximo reintento de amistad.

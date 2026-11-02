@@ -1,8 +1,8 @@
-"""HorizonsApiClient: comunicación con la API real de DiamantesExpress (`/hcgi/api/agent/...`).
+"""DiamantesExpressApiClient: comunicación con la API real de DiamantesExpress (`/hcgi/api/agent/...`).
 
 - Solo HTTPS (HTTP únicamente hacia localhost y si se habilita explícitamente para pruebas).
 - Autenticación `Authorization: Bearer dxa_...` (token creado en Automatización → Tokens del agente).
-- El agente inicia todas las llamadas (Horizons no recibe conexiones entrantes).
+- El agente inicia todas las llamadas (DiamantesExpress no recibe conexiones entrantes).
 - Clasificación de errores: ApiUnavailable (reintentable), AuthError, ConflictError, NotFoundError.
 """
 
@@ -73,7 +73,7 @@ class ClaimResult:
     instructions: list[str]
 
 
-class HorizonsApiClient:
+class DiamantesExpressApiClient:
     def __init__(self, base_url: str, token: str | None, contract: ApiContract, *, agent_name: str = "",
                  timeout: float = 20.0, allow_insecure_localhost: bool = False,
                  transport: httpx.AsyncBaseTransport | None = None):

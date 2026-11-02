@@ -22,9 +22,9 @@ def isolated_home(tmp_path, monkeypatch):
 
 
 from dxagent.ai.schemas import ExtractedField, ScreenAnalysis, SuggestedAction, VisibleElement  # noqa: E402
-from dxagent.api.client import HorizonsApiClient  # noqa: E402
+from dxagent.api.client import DiamantesExpressApiClient  # noqa: E402
 from dxagent.api.contract import ApiContract  # noqa: E402
-from dxagent.api.mock_backend import MockHorizonsBackend  # noqa: E402
+from dxagent.api.mock_backend import MockDiamantesExpressBackend  # noqa: E402
 from dxagent.android.mock_device import MockDevice  # noqa: E402
 from dxagent.database import LocalDatabase  # noqa: E402
 from dxagent.service.agent import AgentService  # noqa: E402
@@ -37,7 +37,7 @@ FAST_ENGINE = {"settle_s": 0.0, "poll_interval_s": 0.01, "screen_wait_timeout_s"
 
 @pytest.fixture
 def backend():
-    return MockHorizonsBackend(token=TOKEN)
+    return MockDiamantesExpressBackend(token=TOKEN)
 
 
 @pytest.fixture
@@ -52,8 +52,8 @@ def device():
     return MockDevice()
 
 
-def make_api(backend: MockHorizonsBackend, token: str = TOKEN) -> HorizonsApiClient:
-    return HorizonsApiClient(API_URL, token, ApiContract.load(), agent_name="PC-PRUEBAS", transport=backend.transport())
+def make_api(backend: MockDiamantesExpressBackend, token: str = TOKEN) -> DiamantesExpressApiClient:
+    return DiamantesExpressApiClient(API_URL, token, ApiContract.load(), agent_name="PC-PRUEBAS", transport=backend.transport())
 
 
 def make_settings(**overrides) -> AgentSettings:

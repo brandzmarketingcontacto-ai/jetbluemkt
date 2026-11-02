@@ -1,9 +1,9 @@
 """RecoveryManager: recuperación tras cierres inesperados y control de reinicios seguros.
 
 Regla principal: una operación transaccional nunca se repite. Si al arrancar existe una tarea con
-el paso transaccional iniciado y sin resultado verificado, se reporta `uncertain` (Horizons la pasa
+el paso transaccional iniciado y sin resultado verificado, se reporta `uncertain` (DiamantesExpress la pasa
 SIEMPRE a revisión manual). Las tareas que no llegaron al envío se abandonan localmente: al vencer
-el lease, Horizons las reintenta.
+el lease, DiamantesExpress las reintenta.
 """
 
 from __future__ import annotations

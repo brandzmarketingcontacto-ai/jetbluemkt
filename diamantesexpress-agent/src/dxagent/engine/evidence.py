@@ -26,7 +26,7 @@ class EvidenceManager:
         path.write_bytes(data)
         digest = hashlib.sha256(data).hexdigest()
         self.db.add_evidence(evidence_id, job_id, kind, str(path), digest, label)
-        # Horizons no recibe archivos: la evidencia viaja como hash sha256 + metadatos en el resultado.
+        # DiamantesExpress no recibe archivos: la evidencia viaja como hash sha256 + metadatos en el resultado.
         return evidence_id
 
     def save_json(self, job_id: str, label: str, payload: dict) -> str:
@@ -34,7 +34,7 @@ class EvidenceManager:
                          label)
 
     def summary(self, job_id: str, limit: int = 20) -> list[dict]:
-        """Referencias compactas (sha256) para el campo `evidence` del resultado (máx. 2 MB en Horizons)."""
+        """Referencias compactas (sha256) para el campo `evidence` del resultado (máx. 2 MB en DiamantesExpress)."""
         return [{"id": e["evidence_id"], "kind": e["kind"], "label": e["label"], "sha256": f"sha256:{e['sha256']}"}
                 for e in self.db.evidence_for(job_id)[-limit:]]
 

@@ -54,7 +54,7 @@ Antes de escribirse, cada línea pasa por un filtro que reemplaza por `***`:
 | `JOB_NO_LONGER_ASSIGNED`, `LEASE_LOST` | El servidor ya no asigna la tarea a este agente (409). No se envió. |
 | `MODE_MISMATCH` | La tarea llegó en un modo que el agente no puede ejecutar. No se envió. |
 | `DUPLICATE_ORDER`, `UNKNOWN_LOCAL_STATE` | Duplicado o tarea sin registro local → `uncertain` (revisión manual). |
-| `task_already_finished`, `task_owned_by_other_agent` | Respuestas 409 de Horizons; se registran como alerta. |
+| `task_already_finished`, `task_owned_by_other_agent` | Respuestas 409 de DiamantesExpress; se registran como alerta. |
 | `COMMIT_UNCERTAIN`, `RESULT_UNCERTAIN`, `RESTART_DURING_COMMIT` | Resultado incierto → **revisión manual**. |
 | `DAILY_BUDGET`, `ORDER_BUDGET`, `ORDER_REQUESTS`, `PRICING_MISSING` | Límites de IA. |
 | `MAX_ACTIONS`, `MAX_DURATION`, `MAX_CONSECUTIVE_ERRORS` | Límites de ejecución. |

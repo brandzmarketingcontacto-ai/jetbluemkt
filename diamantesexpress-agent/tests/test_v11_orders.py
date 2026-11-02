@@ -1,6 +1,6 @@
 """API v1.1: pedidos en dos fases (amistad + regalo), cantidades divididas, /defer y saldo de diamantes.
 
-Todo en modo simulación: backend ficticio de Horizons y app de simulación (sin envíos reales)."""
+Todo en modo simulación: backend ficticio de DiamantesExpress y app de simulación (sin envíos reales)."""
 
 from datetime import timedelta
 

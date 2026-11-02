@@ -110,7 +110,7 @@ class CalibrationDef(BaseModel):
 class OrderRules(BaseModel):
     player_id_pattern: str
     # kind -> texto visible. Con accept_server_catalog=true también se aceptan los productos del catálogo de
-    # Horizons (agent_products), usando su gameItemName exacto.
+    # DiamantesExpress (agent_products), usando su gameItemName exacto.
     products: dict[str, str] = Field(default_factory=dict)
     accept_server_catalog: bool = False
     default_category: str = "pase"
@@ -225,7 +225,7 @@ def order_context(workflow: WorkflowDef, job: Job) -> dict[str, str]:
     product = job.product
     label = rules.products.get(product.code)
     if product.game_item_name and (rules.accept_server_catalog or label is not None):
-        label = product.game_item_name  # el catálogo de Horizons manda el texto exacto del juego
+        label = product.game_item_name  # el catálogo de DiamantesExpress manda el texto exacto del juego
     if label is None:
         raise OrderRejected("PRODUCT_NOT_ALLOWED", f"Producto no configurado en el flujo: {product.code}")
     if product.max_per_transaction and product.quantity > product.max_per_transaction:
@@ -236,7 +236,7 @@ def order_context(workflow: WorkflowDef, job: Job) -> dict[str, str]:
         "product.label": label,
         "product.category": product.category or rules.default_category,
         "product.quantity": str(product.quantity),
-        # Vacío si Horizons no envía el costo (v1.0): esa comprobación se omite.
+        # Vacío si DiamantesExpress no envía el costo (v1.0): esa comprobación se omite.
         "product.total_cost": "" if total is None else str(total),
     })
     return ctx

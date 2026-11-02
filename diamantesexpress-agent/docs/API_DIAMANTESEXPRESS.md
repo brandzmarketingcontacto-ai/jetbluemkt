@@ -1,9 +1,9 @@
-# Conexión con DiamantesExpress (Hostinger Horizons)
+# Conexión con DiamantesExpress (diamantesexpress.com)
 
-El agente usa el **contrato oficial** publicado por Horizons (`GET /automation/openapi`, versión **1.1.0**; compatible con 1.0.0),
+El agente usa el **contrato oficial** publicado por DiamantesExpress (`GET /automation/openapi`, versión **1.1.0**; compatible con 1.0.0),
 incluido en `src/dxagent/resources/openapi/diamantesexpress-agent-api.json`. El resumen del MVP está
-en [horizons/MVP.md](horizons/MVP.md). El agente no accede a la base de datos de Horizons: todas las
-llamadas son **HTTPS salientes** iniciadas por la PC (el sandbox de Hostinger no recibe conexiones entrantes).
+en [servidor/MVP.md](servidor/MVP.md). El agente no accede a la base de datos de DiamantesExpress: todas las
+llamadas son **HTTPS salientes** iniciadas por la PC (el servidor de la tienda no recibe conexiones entrantes).
 
 ## Configuración
 
@@ -15,7 +15,7 @@ llamadas son **HTTPS salientes** iniciadas por la PC (el sandbox de Hostinger no
 | `ADB_PATH` / `ADB_DEVICE_SERIAL` | Ruta de adb y serial (p. ej. `127.0.0.1:5555` o `emulator-5554`) |
 | `AGENT_POLL_SECONDS` / `AGENT_HEARTBEAT_SECONDS` | 10 / 30 |
 | `AGENT_MODE` | `simulation` \| `supervised` \| `production` (modo **local**; el servidor manda) |
-| `OPENAI_API_KEY` | Solo en la PC; nunca en Horizons |
+| `OPENAI_API_KEY` | Solo en la PC; nunca en DiamantesExpress |
 
 El token se guarda en el **Administrador de credenciales de Windows** (DPAPI) desde *Configuración → Claves y
 secretos* o con `dxagent-cli.exe set-secret agent-token`. No hay emparejamiento por código: el token se pega una vez.
@@ -33,18 +33,18 @@ Para comprobar la conexión sin reclamar tareas: `dxagent-cli.exe check-api` o e
 | GET | `/agent/tasks/current` | Al arrancar: tareas que el servidor nos atribuye. Si no hay registro local de una → `uncertain` (revisión manual). |
 
 Las rutas `/automation/*` (JWT de SUPER_ADMIN) son de la consola y el agente **no** las usa.
-Si Horizons cambia una ruta: `route_overrides` en `settings.json`, p. ej.
+Si DiamantesExpress cambia una ruta: `route_overrides` en `settings.json`, p. ej.
 `{"claimTask": "POST /agent/v2/tasks/claim"}` (nombres: `heartbeat`, `claimTask`, `currentTasks`, `reportProgress`, `reportResult`, `deferTask`).
 
 ## Pedidos en dos fases (v1.1)
 
-Free Fire solo deja regalar a jugadores de la lista de amigos de la cuenta emisora. Por eso Horizons crea, por cada
+Free Fire solo deja regalar a jugadores de la lista de amigos de la cuenta emisora. Por eso DiamantesExpress crea, por cada
 pedido pagado, una tarea `friend_request` y una o varias tareas `gift` (en `waiting_friend`). Si la cantidad supera
 `maxPerTransaction`, el servidor la divide: 100 cajas con máximo 57 → `chunkIndex` 0 (57) y 1 (43).
 
 | Fase | Flujo local | Resultado |
 |---|---|---|
-| `friend_request` | `friend_workflow_id` (simulación: `simulation_friend`) | `completed` + `friendStatus`: `request_sent`, `already_friends` (sin pulsar nada) o `player_not_found` (Horizons pasa el pedido a revisión) |
+| `friend_request` | `friend_workflow_id` (simulación: `simulation_friend`) | `completed` + `friendStatus`: `request_sent`, `already_friends` (sin pulsar nada) o `player_not_found` (DiamantesExpress pasa el pedido a revisión) |
 | `gift` | `workflow_id` (simulación: `simulation_gift`) | Si el jugador aún no es amigo → `/defer`. Si lo es → selecciona pestaña (`category`), objeto (`gameItemName` exacto), destinatario y cantidad con –/+; comprueba cantidad, costo total (`quantity × unitDiamondCost`) y saldo **antes** de enviar |
 
 Reglas del agente:
@@ -73,7 +73,7 @@ El servidor manda; el modo local solo puede **restringir**.
 
 ## Cómo se cierra cada tarea
 
-| Situación local | Qué se envía | Estado en Horizons |
+| Situación local | Qué se envía | Estado en DiamantesExpress |
 |---|---|---|
 | Entrega verificada en pantalla (destinatario y producto coinciden) | `completed` + `giftCode` | `completed` (`manual_review` en supervised) |
 | Datos inválidos, destinatario inexistente o rechazo del operador (nada enviado) | `failed` (`evidence.preCommit=true`) | `failed` |
@@ -84,12 +84,12 @@ El servidor manda; el modo local solo puede **restringir**.
 Una tarea ya ejecutada nunca se repite: si vuelve a entregarse (p. ej. se perdió la respuesta del resultado y venció
 el lease), el agente **reenvía el resultado guardado** sin tocar el emulador.
 
-## Limitaciones del contrato actual (documentadas por Horizons)
+## Limitaciones del contrato actual (documentadas por DiamantesExpress)
 
 - No hay subida de capturas: las imágenes quedan en la PC (`evidence\<id>\`) y viajan solo sus hashes.
 - No hay endpoint de alertas: las alertas se ven en la interfaz y en `logs\audit.jsonl`.
 - No hay endpoint para liberar una tarea: se libera dejando vencer el lease.
-- `POST /automation/simulate` aún no permite elegir `kind`, `quantity` ni `phase` (pedido a Horizons). Para probar
+- `POST /automation/simulate` aún no permite elegir `kind`, `quantity` ni `phase` (pedido a DiamantesExpress). Para probar
   pedidos completos en local: `dxagent-cli.exe mock-backend` y `dxagent-cli.exe simulate --orders 25`.
 - El texto `x-unsupported` del OpenAPI 1.1.0 todavía dice «solo Pase Booyah»; el catálogo `agent_products` ya
   permite otros productos.

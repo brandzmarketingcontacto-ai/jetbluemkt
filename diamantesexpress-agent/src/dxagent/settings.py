@@ -29,7 +29,7 @@ class AutomationMode(str, Enum):
 
 
 class AgentSettings(BaseModel):
-    # Backend DiamantesExpress (Hostinger Horizons): https://<dominio-publicado>/hcgi/api
+    # Backend DiamantesExpress (diamantesexpress.com): https://<dominio-publicado>/hcgi/api
     api_url: str = ""
     agent_name: str = ""          # hostname enviado en el heartbeat (DX_AGENT_NAME)
     api_timeout_seconds: float = 20.0

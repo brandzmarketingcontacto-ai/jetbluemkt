@@ -1,4 +1,4 @@
-"""Las 16 pruebas exigidas en la especificación (sección 13), contra el contrato real de Horizons.
+"""Las 16 pruebas exigidas en la especificación (sección 13), contra el contrato real de DiamantesExpress.
 Ninguna realiza envíos reales: backend simulado, Android simulado y cliente OpenAI falso."""
 
 from __future__ import annotations
@@ -129,7 +129,7 @@ async def test_05_adb_disconnected(agent_factory, backend, device, db):
     assert device.transactions == []
     await agent.sync.flush_all()
     assert "task_5" not in backend.results
-    # Al vencer el lease, Horizons la vuelve a poner en pending (reintento automático).
+    # Al vencer el lease, DiamantesExpress la vuelve a poner en pending (reintento automático).
     backend.clock = lambda: datetime.now(timezone.utc) + timedelta(seconds=backend.lease_seconds + 1)
     backend.expire_leases()
     assert backend.tasks["task_5"]["status"] == "pending"
@@ -285,7 +285,7 @@ async def test_11_duplicate_task_and_order(agent_factory, backend, device, db):
     await agent.startup()
     await agent.work_once()
     assert len(device.transactions) == 1
-    # Se pierde la respuesta del resultado y el lease vence: Horizons vuelve a entregar la MISMA tarea.
+    # Se pierde la respuesta del resultado y el lease vence: DiamantesExpress vuelve a entregar la MISMA tarea.
     backend.tasks["task_11"].update(status="pending", owner=None, result=None)
     db.outbox_sent(db.outbox_items("result")[0]["id"], "pending")
     assert await agent.work_once() is False

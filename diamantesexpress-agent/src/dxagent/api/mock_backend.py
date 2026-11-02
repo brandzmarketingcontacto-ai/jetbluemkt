@@ -1,6 +1,6 @@
 """Backend simulado que imita la API REAL de DiamantesExpress v1.1 (`/hcgi/api/agent/...`).
 
-Reproduce el comportamiento documentado por Horizons:
+Reproduce el comportamiento documentado por DiamantesExpress:
 - modos off | simulation | supervised | production y pausa;
 - claim atómico con lease; al vencer el lease la tarea vuelve a pending hasta maxAttempts y luego
   pasa a manual_review;
@@ -50,7 +50,7 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class MockHorizonsBackend:
+class MockDiamantesExpressBackend:
     def __init__(self, token: str = "dxa_test_token_123456", mode: str = "simulation", agent_name: str = "agente-1"):
         self.lock = threading.RLock()
         self.tokens = {token: agent_name}
@@ -100,7 +100,7 @@ class MockHorizonsBackend:
             "maxAttempts": self.max_attempts, "leaseExpiresAt": None, "claimedAt": None, "owner": None,
             "evidence": None, "result": None, "errorCode": None, "errorMessage": None, "usage": None,
             "createdAt": self.clock().isoformat(), "updatedAt": self.clock().isoformat(),
-            # v1.1 (Horizons envía "" cuando no aplica)
+            # v1.1 (DiamantesExpress envía "" cuando no aplica)
             "phase": phase, "quantity": None if phase == "friend_request" else quantity,
             "chunkIndex": chunk_index, "chunkCount": chunk_count, "category": product.get("category", ""),
             "gameItemName": product.get("gameItemName", ""), "unitDiamondCost": product.get("unitDiamondCost"),
@@ -147,7 +147,7 @@ class MockHorizonsBackend:
             self.tokens.pop(token, None)
 
     def expire_leases(self) -> None:
-        """Aplica el vencimiento de leases como lo hace Horizons."""
+        """Aplica el vencimiento de leases como lo hace DiamantesExpress."""
         now = self.clock()
         for t in self.tasks.values():
             if t["status"] in ("processing", "verifying") and t["leaseExpiresAt"] \

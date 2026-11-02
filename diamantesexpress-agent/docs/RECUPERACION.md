@@ -26,7 +26,7 @@
 ### Pedido en "Revisión manual"
 1. Historial → anote el pedido. Abra `evidence\<job_id>\` (capturas `resumen_previo`, `resultado…`).
 2. Verifique en la cuenta del juego/app si el regalo llegó al destinatario.
-3. Resuelva en el panel de Horizons (marcar entregado o reprogramar). El agente **no** lo reintentará.
+3. Resuelva en el panel de DiamantesExpress (marcar entregado o reprogramar). El agente **no** lo reintentará.
 
 ### Parada de emergencia
 - Botón **EMERGENCIA** o `dxagent-cli.exe emergency-stop`. Crea la bandera `EMERGENCY_STOP` que el motor
@@ -47,5 +47,5 @@ consulta `/agent/tasks/current`: toda tarea que el servidor le atribuya y que ya
 
 ### Tareas devueltas sin ejecutar
 Si el agente no pudo empezar (emulador, IA, pantalla desconocida, emergencia), no reporta resultado: al vencer
-el lease (`leaseSeconds`, 300 s por defecto) Horizons la vuelve a `pending`; tras `maxAttempts` pasa a
+el lease (`leaseSeconds`, 300 s por defecto) DiamantesExpress la vuelve a `pending`; tras `maxAttempts` pasa a
 `manual_review`. Se ve en el Historial como *Devuelto*.

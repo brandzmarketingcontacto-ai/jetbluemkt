@@ -73,5 +73,5 @@ y lo reinicia si termina. El servicio usa un bloqueo de instancia única, así q
 
 1. `dxagent-cli.exe doctor` → revise `bluestacks`, `contract`, `pricing`, `workflow`.
 2. `dxagent-cli.exe screenshot --out prueba.png` → debe abrir el emulador elegido si está cerrado y guardar una captura.
-3. Interfaz → *Iniciar* → con pedidos de prueba en Horizons, observe el panel y el historial.
+3. Interfaz → *Iniciar* → con pedidos de prueba en DiamantesExpress, observe el panel y el historial.
 4. Complete la lista de [PRUEBAS_WINDOWS.md](PRUEBAS_WINDOWS.md) antes de pasar a SUPERVISADO.

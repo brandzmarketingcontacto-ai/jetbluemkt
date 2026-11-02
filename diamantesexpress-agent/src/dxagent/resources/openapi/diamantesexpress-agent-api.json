@@ -3,7 +3,7 @@
   "info": {
     "title": "DiamantesExpress · Windows Delivery Agent API",
     "version": "1.1.0",
-    "description": "Contrato de la API real de DiamantesExpress (Hostinger Horizons), v1.1.0. Este archivo incluye las rutas /agent completas y los esquemas que usa el agente Windows, tal como los publicó Horizons en GET /automation/openapi (las rutas /automation/products* de la consola no se usan en el agente). v1.1 añade catálogo de productos, entrega en dos fases (friend_request + gift con chunking), estado waiting_friend con /defer, saldo de diamantes y deliveredQuantity. Retrocompatible con v1.0."
+    "description": "Contrato de la API real de DiamantesExpress (diamantesexpress.com), v1.1.0. Este archivo incluye las rutas /agent completas y los esquemas que usa el agente Windows, tal como los publicó DiamantesExpress en GET /automation/openapi (las rutas /automation/products* de la consola no se usan en el agente). v1.1 añade catálogo de productos, entrega en dos fases (friend_request + gift con chunking), estado waiting_friend con /defer, saldo de diamantes y deliveredQuantity. Retrocompatible con v1.0."
   },
   "servers": [
     {
@@ -2037,7 +2037,7 @@
     "title": "MVP del cliente Windows (DiamantesExpress Agent)",
     "goal": "Conectar DiamantesExpress con un software nativo Windows 24/7 que controle un emulador Android mediante ADB y gestione entregas autorizadas de regalos de Free Fire.",
     "firstVersionMustDo": [
-      "Conectarse con Horizons: heartbeat + claim de tareas vía HTTPS saliente con token de agente.",
+      "Conectarse con DiamantesExpress: heartbeat + claim de tareas vía HTTPS saliente con token de agente.",
       "Abrir una sola instancia de BlueStacks (ADB habilitado desde la configuración avanzada).",
       "Controlar una aplicación Android de prueba con ADB (inicio, taps, capturas).",
       "Interpretar pantallas con OpenAI únicamente cuando aporte valor (análisis visual / decisiones).",
@@ -2072,5 +2072,5 @@
     "Modo production requiere confirmación explícita del SUPER_ADMIN.",
     "Tokens almacenados solo como hash SHA-256; el valor en claro se muestra una sola vez."
   ],
-  "x-agent-extract": "Las rutas /agent y los esquemas Task/Usage son los de la OpenAPI 1.1.0 publicada por Horizons."
+  "x-agent-extract": "Las rutas /agent y los esquemas Task/Usage son los de la OpenAPI 1.1.0 publicada por DiamantesExpress."
 }

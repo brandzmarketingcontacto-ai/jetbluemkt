@@ -54,7 +54,7 @@ Marque cada punto y guarde `dxagent-cli.exe doctor` y los logs como evidencia.
 - [ ] Con `device_backend=adb` y la jerarquía UI deshabilitada (o en el juego), la IA localiza elementos con la
       confianza mínima configurada; si no, el flujo se detiene con `SCREEN_UNRECOGNIZED`.
 
-## E. Horizons
+## E. DiamantesExpress
 - [ ] `doctor` muestra el contrato oficial con 5 operaciones y `audit_log.integro=true`.
 - [ ] `check-api` con el dominio publicado y un token `dxa_` real devuelve el modo del servidor (no reclama tareas).
 - [ ] Servidor en `simulation` + *Automatización → Simular*: el agente reclama, ejecuta en la app ficticia y la tarea
@@ -65,8 +65,8 @@ Marque cada punto y guarde `dxagent-cli.exe doctor` y los logs como evidencia.
 - [ ] Reiniciar la PC durante una tarea: tras el arranque, la tarea queda en `manual_review` (`uncertain`) si se
       había pulsado "enviar", o vuelve a `pending` al vencer el lease si no.
 - [ ] Revocar el token desde el panel → el agente pasa a *Error de credenciales*.
-- [ ] Confirmar con Horizons si `supervised` debe permitir la entrega real con aprobación humana local
-      (ver la tabla de modos en HORIZONS.md).
+- [ ] Confirmar con DiamantesExpress si `supervised` debe permitir la entrega real con aprobación humana local
+      (ver la tabla de modos en API_DIAMANTESEXPRESS.md).
 
 ## F. Free Fire (FASE 9, solo tras A–E)
 - [ ] Confirmar que los Términos de Servicio permiten la operación asistida en la cuenta usada.

@@ -26,7 +26,7 @@ from dxagent import __version__, paths
 from dxagent.ai.pricing import PricingTable
 from dxagent.ai.usage import UsageTracker
 from dxagent.ai.vision import OpenAIVisionAgent, build_openai_client
-from dxagent.api.client import HorizonsApiClient
+from dxagent.api.client import DiamantesExpressApiClient
 from dxagent.api.contract import ApiContract
 from dxagent.api.errors import ApiError, ApiUnavailable, AuthError, ConflictError, NotFoundError
 from dxagent.android.device import DeviceController, DeviceError
@@ -68,7 +68,7 @@ class Health:
 
 class AgentService:
     def __init__(self, settings: AgentSettings, db: LocalDatabase, secrets: SecretStore, *,
-                 api: HorizonsApiClient | None = None, device_factory: DeviceFactory | None = None,
+                 api: DiamantesExpressApiClient | None = None, device_factory: DeviceFactory | None = None,
                  vision: OpenAIVisionAgent | None = None, emulator=None, workflow: WorkflowDef | None = None,
                  evidence_root=None, emergency_flag=None, live_screenshot=None, autostart_running: bool = True,
                  engine_overrides: dict[str, Any] | None = None):
@@ -113,9 +113,9 @@ class AgentService:
         self._tasks: dict[str, asyncio.Task] = {}
 
     # --------------------------------------------------------------- builders
-    def _build_api(self) -> HorizonsApiClient:
+    def _build_api(self) -> DiamantesExpressApiClient:
         contract = ApiContract.load(self.settings.openapi_contract_path or None, self.settings.route_overrides)
-        return HorizonsApiClient(self.settings.api_url, self.secrets.get("agent_token"), contract,
+        return DiamantesExpressApiClient(self.settings.api_url, self.secrets.get("agent_token"), contract,
                                  agent_name=self.settings.agent_name, timeout=self.settings.api_timeout_seconds,
                                  allow_insecure_localhost=self.settings.allow_insecure_http_localhost)
 
@@ -414,7 +414,7 @@ class AgentService:
         """Un ciclo: verificar entorno, reclamar una tarea y ejecutarla. Devuelve True si procesó una."""
         stale = (self.health.server_checked_at is None or self._balance_dirty
                  or time.monotonic() - self.health.server_checked_at > self.settings.heartbeat_interval_seconds * 2)
-        if stale:  # también tras leer un saldo nuevo: Horizons decide con él qué regalos entregar
+        if stale:  # también tras leer un saldo nuevo: DiamantesExpress decide con él qué regalos entregar
             await self.send_heartbeat()
             if self.state == AgentState.AUTH_ERROR:
                 return False

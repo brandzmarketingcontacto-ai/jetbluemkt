@@ -6,7 +6,7 @@ regalos de Free Fire.
 
 ## La primera versión debe hacer correctamente estas cinco cosas
 
-1. Conectarse con Horizons: heartbeat + claim de tareas por HTTPS saliente con
+1. Conectarse con DiamantesExpress: heartbeat + claim de tareas por HTTPS saliente con
    el token de agente (Authorization: Bearer dxa_...).
 2. Abrir una sola instancia de BlueStacks (ADB habilitado desde su
    configuración avanzada).
@@ -29,7 +29,7 @@ regalos de Free Fire.
 - Comenzar con UNA instancia de BlueStacks. Tras validar estabilidad y
   métricas, ampliar a varias instancias y agentes Windows.
 - El agente inicia todas las llamadas (HTTPS saliente). El sandbox de
-  Hostinger no recibe conexiones entrantes.
+  diamantesexpress.com no recibe conexiones entrantes.
 - Persistir el token con DPAPI (Almacén de credenciales de Windows), nunca
   en el repositorio.
 

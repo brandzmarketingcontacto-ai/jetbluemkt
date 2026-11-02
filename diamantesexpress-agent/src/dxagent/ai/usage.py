@@ -83,10 +83,10 @@ class UsageTracker:
 
 
 def usage_for_result(db: LocalDatabase, job_id: str, default_model: str) -> ApiUsage | None:
-    """Suma el uso REAL de OpenAI de una tarea en el formato `Usage` de Horizons.
+    """Suma el uso REAL de OpenAI de una tarea en el formato `Usage` de DiamantesExpress.
 
     prompt_tokens incluye los tokens en caché (la API de OpenAI los cuenta dentro de input_tokens);
-    Horizons los descuenta de la entrada facturable. Se envía cost_usd calculado con pricing.yaml.
+    DiamantesExpress los descuenta de la entrada facturable. Se envía cost_usd calculado con pricing.yaml.
     """
     records = db.usage_for_job(job_id)
     if not records:

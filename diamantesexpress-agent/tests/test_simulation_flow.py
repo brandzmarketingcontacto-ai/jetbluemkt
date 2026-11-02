@@ -1,4 +1,4 @@
-"""Flujo completo contra el contrato real de Horizons, con tareas simuladas (simulate=true)."""
+"""Flujo completo contra el contrato real de DiamantesExpress, con tareas simuladas (simulate=true)."""
 
 from dxagent.models import AgentState, JobStatus
 
@@ -25,7 +25,7 @@ async def test_end_to_end_simulated_task_completes_and_reports(agent_factory, ba
     assert result["evidence"]["simulated"] is True
     assert result["evidence"]["preCommit"] is False
     assert result["evidence"]["verification"]["outcome"] == "success"
-    # Evidencia solo como hashes (Horizons no recibe archivos; máx. 2 MB).
+    # Evidencia solo como hashes (DiamantesExpress no recibe archivos; máx. 2 MB).
     assert all(f["sha256"].startswith("sha256:") for f in result["evidence"]["files"])
     assert "usage" not in result  # sin IA no hay consumo que reportar
     assert task["status"] == "completed"
@@ -64,7 +64,7 @@ async def test_invalid_task_rejected_by_rules(agent_factory, backend, device, db
 async def test_data_mismatch_blocks_commit(agent_factory, backend, device, db):
     agent = agent_factory()
     await agent.startup()
-    # Catálogo erróneo en Horizons: el kind es Pase Booyah pero gameItemName apunta a otro objeto del juego.
+    # Catálogo erróneo en DiamantesExpress: el kind es Pase Booyah pero gameItemName apunta a otro objeto del juego.
     backend.add_task(task_id="task_mm", gameItemName="310 Diamantes")
     await agent.work_once()
     row = db.get_job("task_mm")

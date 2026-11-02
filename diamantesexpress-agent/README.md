@@ -1,7 +1,6 @@
 # DiamantesExpress Agent
 
-Aplicación nativa para Windows 11 que recibe pedidos de la tienda **DiamantesExpress** (Hostinger
-Horizons), controla un emulador **BlueStacks 5** o **LDPlayer 9** por **ADB** (se elige al instalar y se cambia en Configuración), usa **OpenAI** (Responses API) para
+Aplicación nativa para Windows 11 que recibe pedidos de la tienda **DiamantesExpress** (diamantesexpress.com), controla un emulador **BlueStacks 5** o **LDPlayer 9** por **ADB** (se elige al instalar y se cambia en Configuración), usa **OpenAI** (Responses API) para
 interpretar pantallas cuando hace falta y reporta al backend el resultado verificado de cada entrega
 junto con los tokens y el costo consumidos.
 
@@ -17,9 +16,9 @@ junto con los tokens y el costo consumidos.
 | Capacidad | Estado |
 |---|---|
 | Interfaz, configuración, secretos en Windows Credential Manager | Implementado. UI probada en modo offscreen (Linux). Credential Manager: pendiente de prueba en Windows. |
-| Cliente API Horizons (**contrato oficial** OpenAPI 1.1.0, compatible con 1.0.0: `/hcgi/api/agent/...`) | Implementado y probado contra un backend simulado que reproduce ese contrato (en memoria y por HTTP real). **Pendiente**: probar contra el dominio publicado con un token `dxa_` real. |
+| Cliente API DiamantesExpress (**contrato oficial** OpenAPI 1.1.0, compatible con 1.0.0: `/hcgi/api/agent/...`) | Implementado y probado contra un backend simulado que reproduce ese contrato (en memoria y por HTTP real). **Pendiente**: probar contra el dominio publicado con un token `dxa_` real. |
 | Heartbeat, modo/pausa del servidor, claim con lease, progreso, resultado con `usage` y evidencia (hashes), recuperación con `/agent/tasks/current`, registro de auditoría | Implementado y probado contra el backend simulado. |
-| **v1.1**: pedidos en dos fases (solicitud de amistad + regalo), `/defer` mientras el cliente no acepta, cantidades divididas por `maxPerTransaction` (100 cajas → 57 + 43), `deliveredQuantity`, saldo de diamantes (`diamondBalance`, `insufficient_balance`) | Implementado y probado contra el backend simulado v1.1 y la app de simulación. **Pendiente**: probar contra Horizons publicado. |
+| **v1.1**: pedidos en dos fases (solicitud de amistad + regalo), `/defer` mientras el cliente no acepta, cantidades divididas por `maxPerTransaction` (100 cajas → 57 + 43), `deliveredQuantity`, saldo de diamantes (`diamondBalance`, `insufficient_balance`) | Implementado y probado contra el backend simulado v1.1 y la app de simulación. **Pendiente**: probar contra DiamantesExpress publicado. |
 | Emulador **BlueStacks 5** (`HD-Player.exe`, `bluestacks.conf`) o **LDPlayer 9** (`ldconsole.exe`): detección, instancias, inicio, espera de arranque, reinicio seguro | Implementado. Probado con instalaciones, procesos y consola simulados. **Pendiente**: validar ambos en Windows real. |
 | ADB: conexión, captura, resolución/orientación, app activa, toques, texto, apertura de apps autorizadas | Implementado. Probado con un `adb` falso (argumentos y parseo). **Pendiente**: BlueStacks real. |
 | OpenAI Responses API con salida estructurada (Pydantic) y registro de uso real | Implementado. Probado con un cliente falso que imita `responses.parse`. **Pendiente**: llamada real con su clave. |
@@ -44,7 +43,7 @@ python -m dxagent doctor                  # diagnóstico (no consume tokens)
 python -m dxagent ui                      # interfaz (inicia el servicio)
 ```
 
-Probar la aplicación completa sin Horizons, con el backend simulado por HTTP:
+Probar la aplicación completa sin DiamantesExpress, con el backend simulado por HTTP:
 
 ```powershell
 python -m dxagent mock-backend --jobs 10          # en una terminal
@@ -68,7 +67,7 @@ Se generan dos ejecutables en la misma carpeta: `DiamantesExpressAgent.exe` (ven
 ## Documentación
 
 - [Instalación en la PC dedicada](docs/INSTALACION.md)
-- [Manual de conexión con Hostinger Horizons](docs/HORIZONS.md)
+- [Manual de conexión con diamantesexpress.com](docs/API_DIAMANTESEXPRESS.md)
 - [Arquitectura](docs/ARQUITECTURA.md)
 - [Sistema de logs](docs/LOGS.md)
 - [Guía de recuperación](docs/RECUPERACION.md)

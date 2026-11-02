@@ -4,7 +4,7 @@
 # envía la solicitud. Todavía no hay capturas de esta sección: TODO lo marcado con <VERIFICAR...> debe completarse
 # en la PC real. El motor se NIEGA a cargar el flujo mientras queden marcadores.
 #
-# Resultado que se envía a Horizons (friendStatus): request_sent | already_friends | player_not_found.
+# Resultado que se envía a DiamantesExpress (friendStatus): request_sent | already_friends | player_not_found.
 # Mismas reglas que la plantilla de regalo: solo toques sobre la interfaz visible, sin modificar el juego, y
 # confirmación previa de los Términos de Servicio.
 #
