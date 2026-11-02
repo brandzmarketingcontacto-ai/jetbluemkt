@@ -41,3 +41,41 @@ def test_main_window_renders_and_sends_commands(qtbot_free_app):
 def qtbot_free_app():
     from PySide6.QtWidgets import QApplication
     return QApplication.instance() or QApplication([])
+
+
+def test_detect_emulator_always_gives_feedback(qtbot_free_app, monkeypatch):
+    from PySide6.QtCore import QThreadPool
+    from PySide6.QtWidgets import QMessageBox
+
+    import dxagent.android.emulator as emulator
+    from dxagent.settings import SettingsManager
+    from dxagent.ui.settings_page import SettingsPage
+
+    shown = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: shown.append(a[2]))
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: shown.append(a[2]))
+    page = SettingsPage(SettingsManager())
+    page.device_backend.setCurrentIndex(0)  # simulador interno: el botón se oculta y, si se pulsa, avisa
+    assert not page.emu_form.isRowVisible(page.detect_btn)
+    page.detect_emulator()
+    assert "LDPlayer" in shown[-1]
+
+    class FakeLD:
+        name = "ldplayer"
+
+        def status(self):
+            return {"installed": True, "install_dir": r"C:\LDPlayer\LDPlayer9", "adb_path": "adb.exe",
+                    "adb_enabled": None, "running": True, "selected_instance": "0",
+                    "instances": {"0": {"display_name": "LDPlayer", "adb_port": 5555}}}
+    monkeypatch.setattr(emulator, "build_emulator", lambda settings: FakeLD())
+    page.device_backend.setCurrentIndex(2)
+    assert page.emu_form.isRowVisible(page.detect_btn)
+    page.detect_emulator()
+    QThreadPool.globalInstance().waitForDone(5000)
+    for _ in range(50):
+        qtbot_free_app.processEvents()
+        if "Instancias" in page.emu_info.text():
+            break
+    assert "0 (LDPlayer, puerto 5555)" in page.emu_info.text()
+    assert page.emu_instance.currentText() == "0"
+    assert page.ld_dir.text() == r"C:\LDPlayer\LDPlayer9"

@@ -38,8 +38,20 @@ class _Task(QRunnable):
             self.signals.done.emit(None, exc)
 
 
+_PENDING: set[_Signals] = set()
+
+
 def run_in_background(fn, callback) -> None:
-    QThreadPool.globalInstance().start(_Task(fn, callback))
+    """Ejecuta fn fuera del hilo de la interfaz y entrega (resultado, error) a callback en el hilo de la interfaz.
+
+    Los objetos de señal se retienen hasta la entrega: QThreadPool destruye la tarea al terminar y, sin esta
+    referencia, la señal en cola se perdía y el botón parecía no hacer nada.
+    """
+    task = _Task(fn, callback)
+    signals = task.signals
+    _PENDING.add(signals)
+    signals.done.connect(lambda *_: _PENDING.discard(signals))
+    QThreadPool.globalInstance().start(task)
 
 
 def section(title: str) -> tuple[QFrame, QFormLayout]:
@@ -151,7 +163,7 @@ class SettingsPage(QScrollArea):
         self.emu_instance = QComboBox()
         self.emu_instance.setEditable(True)
         self.emu_instance.setCurrentText(s.emulator_instance)
-        detect = QPushButton("Detectar instalación e instancias")
+        self.detect_btn = detect = QPushButton("Detectar instalación e instancias")
         detect.clicked.connect(self.detect_emulator)
         self.emu_info = QLabel("")
         self.emu_info.setWordWrap(True)
@@ -378,7 +390,7 @@ class SettingsPage(QScrollArea):
                                 (self.bs_conf, uses_adb and emulator == "bluestacks"),
                                 (self.ld_dir, uses_adb and emulator == "ldplayer")):
             self.emu_form.setRowVisible(widget, visible)
-        for widget in (self.emu_instance, self.adb_path, self.adb_serial, self.emu_info):
+        for widget in (self.emu_instance, self.detect_btn, self.adb_path, self.adb_serial, self.emu_info):
             self.emu_form.setRowVisible(widget, uses_adb)
         hints = {
             "mock": "Pruebas sin emulador: el agente usa una app Android simulada interna.",
@@ -392,30 +404,44 @@ class SettingsPage(QScrollArea):
     def detect_emulator(self) -> None:
         from dxagent.android.emulator import EMULATORS, build_emulator
         if self.device_backend.currentData()[0] != "adb":
-            self.emu_info.setText("Seleccione BlueStacks o LDPlayer para detectar.")
+            QMessageBox.information(self, "Emulador", "Primero elija «BlueStacks 5 por ADB» o «LDPlayer 9 por ADB» "
+                                                      "en Dispositivo.")
             return
-        try:
-            manager = build_emulator(self.collect())
-            st = manager.status()
-        except Exception as exc:
-            self.emu_info.setText(f"Error: {exc}")
-            return
-        current = self.emu_instance.currentText()
-        self.emu_instance.clear()
-        for name in st["instances"]:
-            self.emu_instance.addItem(name)
-        self.emu_instance.setCurrentText(current or st.get("selected_instance") or "")
-        instances = ", ".join(f"{k} ({v['display_name'] or 'sin nombre'}, puerto {v['adb_port']})"
-                              for k, v in st["instances"].items()) or "ninguna"
-        adb_state = {True: "sí", False: "no", None: "verificar en el emulador"}[st["adb_enabled"]]
-        conf = f" · Configuración: {st['conf_path'] or '—'}" if "conf_path" in st else ""
-        self.emu_info.setText(
-            f"{EMULATORS[manager.name]} · Instalado: {'sí' if st['installed'] else 'no'} · "
-            f"Carpeta: {st['install_dir'] or '—'}{conf} · ADB: {st['adb_path'] or 'no encontrado'} · "
-            f"ADB habilitado: {adb_state} · En ejecución: {'sí' if st['running'] else 'no'}<br>Instancias: {instances}")
-        target = self.ld_dir if manager.name == "ldplayer" else self.bs_dir
-        if st["install_dir"] and not target.text():
-            target.setText(st["install_dir"])
+        settings = self.collect()
+        self.detect_btn.setEnabled(False)
+        self.emu_info.setText("Detectando…")
+
+        def work():
+            manager = build_emulator(settings)
+            return manager, manager.status()  # ldconsole/adb pueden tardar: fuera del hilo de la interfaz
+
+        def done(result, error):
+            self.detect_btn.setEnabled(True)
+            if error:
+                self.emu_info.setText(f"Error: {error}")
+                QMessageBox.warning(self, "Emulador", f"No se pudo detectar el emulador:\n{error}")
+                return
+            manager, st = result
+            current = self.emu_instance.currentText()
+            self.emu_instance.clear()
+            for name in st["instances"]:
+                self.emu_instance.addItem(name)
+            self.emu_instance.setCurrentText(current or st.get("selected_instance") or "")
+            instances = ", ".join(f"{k} ({v['display_name'] or 'sin nombre'}, puerto {v['adb_port']})"
+                                  for k, v in st["instances"].items()) or "ninguna"
+            adb_state = {True: "sí", False: "no", None: "verificar en el emulador"}[st["adb_enabled"]]
+            conf = f" · Configuración: {st['conf_path'] or '—'}" if "conf_path" in st else ""
+            self.emu_info.setText(
+                f"{EMULATORS[manager.name]} · Instalado: {'sí' if st['installed'] else 'no'} · "
+                f"Carpeta: {st['install_dir'] or '—'}{conf} · ADB: {st['adb_path'] or 'no encontrado'} · "
+                f"ADB habilitado: {adb_state} · En ejecución: {'sí' if st['running'] else 'no'}<br>Instancias: {instances}")
+            target = self.ld_dir if manager.name == "ldplayer" else self.bs_dir
+            if st["install_dir"] and not target.text():
+                target.setText(st["install_dir"])
+            if not st["installed"]:
+                QMessageBox.warning(self, "Emulador", f"No se encontró {EMULATORS[manager.name]}. Indique la carpeta de "
+                                                      "instalación y vuelva a detectar.")
+        run_in_background(work, done)
 
     def clear_emergency(self) -> None:
         flag = paths.emergency_flag_path()
