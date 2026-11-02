@@ -215,18 +215,39 @@ def cmd_set_secret(args) -> int:
     return 0 if ok else 1
 
 
+def _user_output_path(name: str) -> Path:
+    """Rutas relativas van al Escritorio del usuario: la carpeta de instalación (Program Files) no es escribible."""
+    path = Path(name)
+    if path.is_absolute():
+        return path
+    for desktop in (Path.home() / "Desktop", Path.home() / "Escritorio", Path.home() / "OneDrive" / "Desktop",
+                    Path.home() / "OneDrive" / "Escritorio"):
+        if desktop.is_dir():
+            return desktop / path
+    return Path.home() / path
+
+
+def _wait_message(manager, s) -> None:
+    print(f"Conectando con {manager.display_name} por ADB (espera máx. {s.emulator_boot_timeout_seconds:.0f} s)…")
+    print("  Si tarda: abra el emulador y active ADB "
+          "(LDPlayer: Configuración → Otros ajustes → Depuración ADB → Abrir conexión local; "
+          "BlueStacks: Configuración → Avanzado → ADB).", flush=True)
+
+
 def cmd_screenshot(args) -> int:
     from dxagent.android.emulator import build_emulator
     from dxagent.settings import SettingsManager
     s = SettingsManager().load()
     manager = build_emulator(s)  # BlueStacks 5 o LDPlayer 9, según Configuración
+    out = _user_output_path(args.out)
+    _wait_message(manager, s)
 
     async def go():
         device = await manager.ensure_ready(s.emulator_boot_timeout_seconds)
         png = await device.screenshot_png()
-        Path(args.out).write_bytes(png)
+        out.write_bytes(png)
         return {"serial": device.serial, "size": await device.screen_size(), "orientation": await device.orientation(),
-                "foreground": await device.current_package(), "file": args.out}
+                "foreground": await device.current_package(), "file": str(out)}
     _print(asyncio.run(go()))
     return 0
 
@@ -242,9 +263,11 @@ def cmd_install_sim_apk(args) -> int:
         return 1
     s = SettingsManager().load()
     manager = build_emulator(s)
+    _wait_message(manager, s)
 
     async def go():
         device = await manager.ensure_ready(s.emulator_boot_timeout_seconds)
+        print(f"Conectado a {device.serial}. Instalando la app de simulación…", flush=True)
         installed = await device.install_simulator_apk(apk)
         return {"serial": device.serial, "apk": str(apk), "instalada": installed}
     result = asyncio.run(go())
@@ -379,4 +402,10 @@ def main(argv: list[str] | None = None) -> int:
                 "check-api": cmd_check_api, "set-secret": cmd_set_secret, "screenshot": cmd_screenshot,
                 "analyze-screen": cmd_analyze, "install-sim-apk": cmd_install_sim_apk, "autostart": cmd_autostart, "configure": cmd_configure,
                 "emergency-stop": cmd_emergency, "clear-emergency": cmd_emergency}
-    return handlers[command](args)
+    from dxagent.android.device import DeviceError
+    try:
+        return handlers[command](args)
+    except DeviceError as exc:
+        print(f"Error del emulador: {exc}")
+        print("Revise que el emulador esté abierto, con ADB activado, y ejecute «dxagent-cli.exe doctor».")
+        return 2
