@@ -1,0 +1,128 @@
+# Fase A (friend_request) en Free Fire: buscar al cliente por ID y enviarle la solicitud de amistad.
+#
+# Datos observados en la PC del operador (LDPlayer 9, 1600x900 horizontal, Free Fire 1.132.1); ver
+# docs/FREEFIRE_OBSERVACION.md. El juego no expone jerarquía de Android: las pantallas se reconocen con
+# imágenes de referencia (carpeta freefire/) y OCR de Windows, y los toques usan coordenadas calibradas.
+# Si el juego cambia de diseño o de resolución, hay que volver a calibrar.
+#
+# - El ID del jugador no se muestra en ninguna pantalla: la única garantía es la búsqueda exacta por ID.
+# - El apodo que aparece en el resultado se guarda para elegir al jugador en la fase de regalo.
+# - Sin botón de añadir en el resultado = ya son amigos o la solicitud ya estaba enviada.
+# - SUPERVISADO: el envío de la solicitud requiere aprobación humana. PRODUCCIÓN AUTORIZADA solo con
+#   authorization.authorized: true, una referencia y el modo production en DiamantesExpress.
+id: freefire_friend_supervised
+version: 3
+description: Solicitud de amistad en Free Fire (reconocimiento local, sin IA)
+simulation: false
+phase: friend_request
+allowed_modes: [SUPERVISED, AUTHORIZED_PRODUCTION]
+assets: freefire
+
+authorization:
+  authorized: false
+  reference: null
+  validated_at: null
+  validated_by: null
+
+app:
+  package: com.dts.freefireth
+  activity: com.dts.freefireth.FFMainActivity
+
+order_rules:
+  player_id_pattern: "^[0-9]{6,12}$"
+
+calibration:
+  validated: true
+  resolution: [1600, 900]
+
+screens:
+  ld_recharge:
+    description: Ventana de LDPlayer «Recargar Free Fire vía LDPlayer» (compras reales; solo se cierra)
+    markers: [{region: [0.3125, 0.1667, 0.6875, 0.2556], ocr: "Recargar"}]
+  lobby:
+    description: Lobby principal con el menú TIENDA
+    markers: [{region: [0.0094, 0.3, 0.0938, 0.3467], image: lobby_tienda.png}]
+  friends:
+    description: Pantalla AMIGOS
+    markers: [{region: [0.8719, 0.0133, 0.9406, 0.0578], image: amigos_titulo.png}]
+  add_friend:
+    description: AMIGOS, pestaña AÑADIR con «Personas que quizás conozcas»
+    markers:
+      - {region: [0.8719, 0.0133, 0.9406, 0.0578], image: amigos_titulo.png}
+      - {region: [0.0063, 0.4578, 0.1594, 0.5467], image: anadir_pestana.png}
+      - {region: [0.2031, 0.1278, 0.4031, 0.1667], image: sugeridos_titulo.png, min_score: 0.95}
+  player_profile:
+    description: AÑADIR con «Resultado de la búsqueda»
+    markers:
+      - {region: [0.8719, 0.0133, 0.9406, 0.0578], image: amigos_titulo.png}
+      - {region: [0.0063, 0.4578, 0.1594, 0.5467], image: anadir_pestana.png}
+      - {region: [0.2031, 0.1278, 0.375, 0.1667], image: resultado_titulo.png, min_score: 0.95}
+  store:
+    description: TIENDA (se cierra si quedó abierta)
+    markers: [{region: [0.8781, 0.0133, 0.9375, 0.0578], image: tienda_titulo.png}]
+  friend_picker:
+    description: Panel de amigos para regalar (se cierra si quedó abierto)
+    markers: [{region: [0.7825, 0.0089, 0.8825, 0.0689], image: selector_cabecera.png}]
+  gift_confirm:
+    description: CONFIRMAR REGALO (se cierra SIN enviar si quedó abierta)
+    markers: [{region: [0.6, 0.1667, 0.7938, 0.2278], ocr: "CONFIRMAR REGALO"}]
+  request_sent:
+    description: Resultado de la búsqueda con el aviso «¡Solicitud enviada!»
+    markers:
+      - {region: [0.8719, 0.0133, 0.9406, 0.0578], image: amigos_titulo.png}
+      - {region: [0.0063, 0.4578, 0.1594, 0.5467], image: anadir_pestana.png}
+      - {region: [0.2031, 0.1278, 0.375, 0.1667], image: resultado_titulo.png, min_score: 0.95}
+      - {region: [0.4313, 0.12, 0.5688, 0.1644], image: solicitud_enviada.png}
+
+elements:
+  close_ld_popup: {description: X de la ventana de recarga de LDPlayer, calibrated: [0.7606, 0.1856]}
+  open_friends: {description: Icono de amigos del lobby, calibrated: [0.875, 0.0333]}
+  open_add_friend: {description: Pestaña AÑADIR, calibrated: [0.0813, 0.5022]}
+  search_field: {description: Campo «Ingresa apodo o ID para buscar», calibrated: [0.8063, 0.1467]}
+  add_button:
+    description: Botón para añadir al jugador del resultado (ENVÍA la solicitud)
+    calibrated: [0.9225, 0.2356]
+    region: [0.9063, 0.2056, 0.9406, 0.2667]
+    image: boton_anadir.png
+  close_screen: {description: X de la pantalla AMIGOS (y de la TIENDA), calibrated: [0.9781, 0.0356]}
+  close_picker: {description: Flecha que cierra el panel de amigos, calibrated: [0.7606, 0.5]}
+  close_confirm: {description: X de CONFIRMAR REGALO (cierra sin enviar), calibrated: [0.8606, 0.1733]}
+
+fields:
+  profile_name:
+    description: Apodo del jugador en el resultado de la búsqueda
+    region: [0.25, 0.2033, 0.4125, 0.2367]
+    reader: ocr
+    match: fuzzy
+
+steps:
+  - {id: open_app, kind: launch_app}
+  - {id: close_ld_popup, kind: tap, element: close_ld_popup, when_screen: ld_recharge, optional: true}
+  # Si un pedido anterior quedó a medias, se vuelve al lobby (cada paso solo actúa en su pantalla).
+  - {id: close_picker, kind: tap, element: close_picker, when_screen: friend_picker, optional: true}
+  - {id: close_confirm, kind: tap, element: close_confirm, when_screen: gift_confirm, optional: true}
+  - {id: leave_store, kind: tap, element: close_screen, when_screen: store, optional: true}
+  - {id: leave_result, kind: tap, element: close_screen, when_screen: player_profile, optional: true}
+  - {id: leave_add, kind: tap, element: close_screen, when_screen: add_friend, optional: true}
+  - {id: leave_friends, kind: tap, element: close_screen, when_screen: friends, optional: true}
+  - {id: wait_lobby, kind: wait_screen, screen: lobby}
+  - {id: friends, kind: tap, element: open_friends, expect: friends}
+  - {id: add, kind: tap, element: open_add_friend, expect: add_friend}
+  - {id: focus_id, kind: tap, element: search_field}
+  - {id: type_id, kind: input_text, element: search_field, value: "{recipient.player_id}", press_enter: true}
+  - id: wait_result
+    kind: wait_screen
+    screen: player_profile
+  - {id: remember_name, kind: remember_field, field: profile_name, memory_key: "nickname:{recipient.player_id}"}
+  - id: verify_profile
+    kind: verify_fields
+    screen: player_profile
+    exits:
+      - {element: add_button, missing: true, outcome: completed, friend_status: already_friends,
+         message: "Ya son amigos o la solicitud ya estaba enviada"}
+  - {id: send_request, kind: commit, element: add_button, result_screens: [request_sent]}
+  - id: verify_request
+    kind: verify_result
+    success_screen: request_sent
+    success_data: {friend_status: request_sent}
+  - {id: back_to_lobby, kind: tap, element: close_screen, expect: lobby, optional: true}

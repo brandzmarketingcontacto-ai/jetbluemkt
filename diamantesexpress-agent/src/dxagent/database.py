@@ -113,6 +113,11 @@ CREATE TABLE IF NOT EXISTS events (
     message TEXT NOT NULL,
     job_id TEXT
 );
+CREATE TABLE IF NOT EXISTS memory (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS alert_keys (
     key TEXT PRIMARY KEY,
     created_at TEXT NOT NULL
@@ -390,6 +395,16 @@ class LocalDatabase:
         return self._all("SELECT * FROM locks")
 
     # ------------------------------------------------------------------- events
+    def memory_set(self, key: str, value: str) -> None:
+        """Dato que debe sobrevivir entre fases de un pedido (p. ej. el apodo del jugador visto en la amistad)."""
+        self._exec("INSERT INTO memory(key, value, updated_at) VALUES (?,?,?) "
+                   "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                   (key, value, iso_now()))
+
+    def memory_get(self, key: str) -> str | None:
+        row = self._one("SELECT value FROM memory WHERE key=?", (key,))
+        return row["value"] if row else None
+
     def add_event(self, level: str, category: str, message: str, job_id: str | None = None) -> None:
         self._exec("INSERT INTO events(ts, level, category, message, job_id) VALUES (?,?,?,?,?)",
                    (iso_now(), level, category, message, job_id))

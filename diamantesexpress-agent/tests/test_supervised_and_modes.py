@@ -98,24 +98,62 @@ def test_production_requires_workflow_and_backend_authorization():
 
 @pytest.mark.parametrize("name,phase", [("freefire_gift_supervised", "gift"),
                                         ("freefire_friend_supervised", "friend_request")])
-def test_freefire_template_refuses_to_load_until_verified(tmp_path, name, phase):
-    src = paths.resources_dir() / "workflows" / f"{name}.template.yaml"
-    dst = tmp_path / f"{name}.yaml"
-    shutil.copy(src, dst)
-    with pytest.raises(WorkflowNotReady, match="sin verificar"):
-        load_workflow(name, tmp_path)
-    # Sin marcadores la estructura es válida (con valores de prueba, NO reales).
-    text = dst.read_text(encoding="utf-8")
-    data = yaml.safe_load(text)
-    data["app"]["package"] = "com.ejemplo.verificado"
-    data["authorization"]["reference"] = "REF-PRUEBA"
-    data["order_rules"] = {"player_id_pattern": "^[0-9]{5,15}$", "products": {"P1": "Etiqueta"}}
-    for group in ("screens", "elements", "fields"):
-        for item in data[group].values():
-            item["description"] = "descripción de prueba"
-    dst.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
-    wf = load_workflow(name, tmp_path)
+def test_freefire_workflows_are_real_and_need_authorization_for_production(name, phase):
+    wf = load_workflow(name, paths.resources_dir() / "workflows")
     assert wf.simulation is False and "SIMULATION" not in wf.allowed_modes and wf.phase == phase
+    assert wf.assets_dir is not None and (wf.assets_dir / "lobby_tienda.png").is_file()
+    with pytest.raises(WorkflowNotReady):
+        check_mode_allowed(wf, "AUTHORIZED_PRODUCTION", True)   # sin autorización validada no hay producción
+
+
+async def test_local_recognition_identifies_screens_from_reference_images():
+    from PIL import Image
+
+    from dxagent.engine.local_vision import open_image
+    from dxagent.engine.observer import Observation, ScreenObserver
+    wf = load_workflow("freefire_gift_supervised", paths.resources_dir() / "workflows")
+
+    def screen_with(*markers):
+        canvas = Image.new("L", (1600, 900), 0)
+        for m in markers:
+            ref = Image.open(wf.assets_dir / m.image)
+            x1, y1, x2, y2 = m.region
+            box = (round(x1 * 1600), round(y1 * 900), round(x2 * 1600), round(y2 * 900))
+            canvas.paste(ref.resize((box[2] - box[0], box[3] - box[1])), box[:2])
+        import io
+        buf = io.BytesIO()
+        canvas.save(buf, "PNG")
+        return Observation(png=buf.getvalue(), xml=None, nodes=[], size=(1600, 900))
+
+    observer = ScreenObserver(None, wf, None, None, "t", "o")
+    for screen_id in ("lobby", "store", "gift_store", "recipient_selected", "gift_result_success"):
+        obs = screen_with(*wf.screens[screen_id].markers)
+        assert await observer._identify_locally(obs) == screen_id
+    assert await observer._identify_locally(screen_with()) is None
+
+
+def test_digit_reader_reads_balance_with_game_font():
+    from PIL import Image
+
+    from dxagent.engine.local_vision import DigitReader
+    wf = load_workflow("freefire_gift_supervised", paths.resources_dir() / "workflows")
+    folder = wf.assets_dir / "saldo"
+    canvas = Image.new("L", (200, 40), 0)
+    x = 5
+    for d in "2918":
+        glyph = Image.open(folder / f"{d}.png").resize((14, 22))
+        canvas.paste(glyph, (x, 9))
+        x += 18
+    plus = Image.new("L", (14, 22), 255)
+    canvas.paste(plus, (x + 4, 9))
+    assert DigitReader(folder, skip_last=1).read(canvas.convert("RGB"), (0, 0, 1, 1)) == "2918"
+
+
+def test_text_similarity_tolerates_ocr_confusions():
+    from dxagent.engine.local_vision import parse_number, text_similarity
+    assert text_similarity("i NN-0Ficial", "NN-OFicial") >= 0.8
+    assert text_similarity("Token Universal Arma Evo", "Caja de Tokens evo universales") < 0.8
+    assert parse_number("150") == 150 and parse_number("") is None
 
 
 async def test_emergency_stop_before_commit(agent_factory, backend, device, db, tmp_path):

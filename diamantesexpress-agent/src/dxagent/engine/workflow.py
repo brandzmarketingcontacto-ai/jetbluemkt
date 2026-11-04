@@ -26,6 +26,7 @@ from dxagent.android.device import DeviceController, DeviceError
 from dxagent.database import LocalDatabase
 from dxagent.engine.approval import ApprovalManager
 from dxagent.engine.evidence import EvidenceManager
+from dxagent.engine import local_vision
 from dxagent.engine.observer import Observation, ObservationError, ScreenObserver
 from dxagent.engine.policy import EmergencyStop, ExecutionLimits, ExecutionPolicy, PolicyViolation
 from dxagent.engine.workflow_def import (ExitDef, OrderRejected, StepDef, WorkflowDef, order_context, render)
@@ -142,12 +143,9 @@ class WorkflowEngine:
         w, h = obs.size
         await self.device.tap(int(x * w), int(y * h))
 
-    def _check_exits(self, step: StepDef | None, obs: Observation) -> None:
+    async def _check_exits(self, step: StepDef | None, obs: Observation, observer: ScreenObserver) -> None:
         for exit_def in (step.exits if step else []):
-            spec = self.wf.elements[exit_def.element]
-            if obs.node(spec.resource_id, spec.text) if (spec.resource_id or spec.text) else False:
-                raise StepExit(exit_def)
-            if obs.ai is not None and obs.ai.element(exit_def.element) is not None:
+            if await observer.element_visible(exit_def.element, obs) != exit_def.missing:
                 raise StepExit(exit_def)
 
     async def _wait_for(self, observer: ScreenObserver, targets: set[str], goal: str,
@@ -158,12 +156,11 @@ class WorkflowEngine:
         while True:
             await asyncio.sleep(self.cfg.settle_s)
             last = await observer.observe(goal)
-            self._check_exits(step, last)  # antes que la pantalla esperada: "ya son amigos" está en el perfil
+            await self._check_exits(step, last, observer)  # antes que la pantalla esperada: "ya son amigos" está en el perfil
             if last.screen_id in targets:
                 return last
             if fail_if and fail_if.get("element"):
-                spec = self.wf.elements[fail_if["element"]]
-                if last.node(spec.resource_id, None):
+                if await observer.element_visible(fail_if["element"], last):
                     raise StepFailed(fail_if.get("code", "APP_ERROR"), f"La aplicación mostró {fail_if['element']}",
                                      order_fault=True, retryable=False)
             if time.monotonic() >= deadline:
@@ -217,6 +214,14 @@ class WorkflowEngine:
         policy: ExecutionPolicy | None = None
         try:
             ctx = order_context(self.wf, job)
+            # Datos recordados de una fase anterior (p. ej. el apodo visto al buscar el ID en la amistad).
+            nickname = self.db.memory_get(f"nickname:{job.recipient.player_id}")
+            if nickname:
+                ctx["recipient.nickname"] = nickname
+            elif any("{recipient.nickname}" in (s.value or "") for s in self.wf.steps):
+                # La amistad se hizo sin guardar el apodo (otra PC o versión anterior): no se adivina el destinatario.
+                return result(JobStatus.RELEASED, "RECIPIENT_NICKNAME_UNKNOWN",
+                              "No se conoce el apodo del jugador (la fase de amistad no lo registró en esta PC)")
         except OrderRejected as exc:
             return result(JobStatus.FAILED, exc.code, str(exc))
 
@@ -356,6 +361,11 @@ class WorkflowEngine:
                                 observer: ScreenObserver, apps: AndroidAppManager) -> None:
         attempts = 0
         self.db.add_checkpoint(job.job_id, step.id, "start")
+        if step.when_screen:
+            current = await observer.observe(f"¿Aparece {step.when_screen}?")
+            if current.screen_id != step.when_screen:
+                self.db.add_checkpoint(job.job_id, step.id, "skipped")
+                return
         while True:
             try:
                 self._live(job, step=step.id, actions=policy.actions)
@@ -397,7 +407,7 @@ class WorkflowEngine:
             element = self._element_name(step.element, ctx, step)
             obs = await observer.observe(f"Pulsar {element}")
             if step.expect and obs.screen_id == step.expect:
-                self._check_exits(step, obs)
+                await self._check_exits(step, obs, observer)
                 return  # ya estamos en la pantalla esperada (reintento idempotente)
             point, _ = await observer.locate(element, obs, f"Localizar {element}")
             await self._tap(policy, obs, point, step)
@@ -406,7 +416,7 @@ class WorkflowEngine:
                                      step=step)
             elif step.exits:
                 await asyncio.sleep(self.cfg.settle_s)
-                self._check_exits(step, await observer.observe(f"Comprobar el resultado de {element}"))
+                await self._check_exits(step, await observer.observe(f"Comprobar el resultado de {element}"), observer)
             else:
                 await asyncio.sleep(self.cfg.settle_s)  # el paso siguiente no debe leer la pantalla anterior al toque
             return
@@ -442,6 +452,29 @@ class WorkflowEngine:
             if step.expect:
                 await self._wait_for(observer, {step.expect}, f"Esperar {step.expect}")
             return
+        if kind == "tap_repeat":
+            # Sin poder leer el contador (juego sin jerarquía) se pulsa un número exacto de veces y luego se
+            # verifica el resultado (p. ej. el precio total) antes del envío.
+            element = self._element_name(step.element, ctx, step)
+            times = int(render(step.value, ctx)) - step.start
+            if times < 0 or times > 200:
+                raise StepFailed("QUANTITY_OUT_OF_RANGE", f"Cantidad fuera de rango para {element}", retryable=False)
+            obs = await observer.observe(f"Pulsar {element} {times} veces")
+            point, _ = await observer.locate(element, obs, f"Localizar {element}")
+            for _ in range(times):
+                await self._tap(policy, obs, point, step)
+                await asyncio.sleep(self.cfg.settle_s)
+            return
+        if kind == "remember_field":
+            obs = await observer.observe(f"Leer {step.field}")
+            values, _ = await observer.read_fields([step.field or ""], obs, f"Leer {step.field}")
+            # El OCR a veces añade comillas o signos sueltos alrededor del apodo: no se pueden teclear en el buscador.
+            value = (values.get(step.field or "") or "").strip().strip("'\"`´‘’“”.,:;|¡!¿?").strip()
+            if not value:
+                raise StepFailed("FIELD_UNREADABLE", f"No se pudo leer {step.field}")
+            self.db.memory_set(render(step.memory_key, ctx), value)
+            ctx[f"memory.{step.field}"] = value
+            return
         if kind == "verify_fields":
             obs = await self._wait_for(observer, {step.screen or ""}, "Verificar datos antes del envío", step=step)
             await self._check_fields(step, ctx, obs, observer)
@@ -459,7 +492,12 @@ class WorkflowEngine:
         policy.authorize("input_text", text=text, step_id=step.id)
         spec = self.wf.elements.get(step.element) if step.element else None
         if spec is None or not spec.resource_id:
+            await asyncio.sleep(self.cfg.focus_delay_s)
             await self.device.input_text(text)  # sin campo verificable (p. ej. juego sin jerarquía): verify_fields
+            if step.press_enter:
+                await asyncio.sleep(self.cfg.settle_s)
+                policy.authorize("key_enter", step_id=step.id)
+                await self.device.keyevent("ENTER")
             return
         seen = ""
         await asyncio.sleep(self.cfg.focus_delay_s)  # el toque anterior enfoca el campo: darle tiempo al teclado
@@ -520,11 +558,21 @@ class WorkflowEngine:
         expected = {name: v for name, tpl in step.checks.items() if (v := render(tpl, ctx)) != ""}
         values, method = await observer.read_fields(list(expected), obs, "Leer los datos visibles")
         mismatches = {k: {"esperado": v, "en_pantalla": values.get(k)} for k, v in expected.items()
-                      if (values.get(k) or "").strip() != v}
+                      if not self._same_value(k, values.get(k), v)}
         if mismatches:
             raise StepFailed("DATA_MISMATCH", f"Los datos en pantalla no coinciden con el pedido: {mismatches}",
                              retryable=False)
         return {"fields": values, "method": method}
+
+    def _same_value(self, field: str, found: str | None, expected: str) -> bool:
+        """Comparación según el campo: exacta (jerarquía), tolerante a errores del OCR o numérica."""
+        spec = self.wf.fields.get(field)
+        mode = spec.match if spec else "exact"
+        if mode == "number":
+            return parse_int(found) == parse_int(expected)
+        if mode == "fuzzy":
+            return local_vision.text_similarity(found or "", expected) >= 0.80
+        return (found or "").strip() == expected
 
     async def _prepare_commit(self, job: Job, ctx: dict[str, str], commit: StepDef, policy: ExecutionPolicy,
                               observer: ScreenObserver) -> tuple[str, Observation]:
@@ -597,7 +645,7 @@ class WorkflowEngine:
         values, method = await observer.read_fields(fields, obs, "Leer datos del resultado")
         expected = {k: render(v, ctx) for k, v in step.checks.items()}
         mismatches = {k: {"esperado": v, "en_pantalla": values.get(k)} for k, v in expected.items()
-                      if (values.get(k) or "").strip() != v}
+                      if not self._same_value(k, values.get(k), v)}
         details: dict[str, Any] = {"screen": obs.screen_id, "fields": values, "screen_method": obs.method}
         if step.reference_field:
             details["reference"] = values.get(step.reference_field)

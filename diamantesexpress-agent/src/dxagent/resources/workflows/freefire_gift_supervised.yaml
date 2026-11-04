@@ -1,0 +1,177 @@
+# Fase B (gift) en Free Fire: regalar desde TIENDA → pestaña de regalo a un amigo ya aceptado.
+#
+# Datos observados en la PC del operador (LDPlayer 9, 1600x900 horizontal, Free Fire 1.132.1); ver
+# docs/FREEFIRE_OBSERVACION.md. Pantallas por imágenes de referencia (carpeta freefire/) y OCR de Windows;
+# toques por coordenadas calibradas; saldo por dígitos con la fuente del juego.
+#
+# - El selector de regalo solo busca por APODO (no por ID): se usa el apodo guardado en la fase de amistad.
+#   Lista vacía = aún no es amigo → se aplaza (no consume intentos).
+# - La cantidad se fija pulsando «+» (cantidad − 1) veces y se verifica con el precio total antes de enviar.
+# - Antes del botón de precio se comprueban destinatario, objeto y precio total en CONFIRMAR REGALO.
+# - Los objetos se eligen por el gameItemName del catálogo de DiamantesExpress: debe coincidir exactamente
+#   con las claves cat_/item_ de este archivo.
+# - Al terminar se vuelve al lobby y se espera el siguiente pedido.
+id: freefire_gift_supervised
+version: 3
+description: Regalo en Free Fire (reconocimiento local, sin IA)
+simulation: false
+phase: gift
+allowed_modes: [SUPERVISED, AUTHORIZED_PRODUCTION]
+assets: freefire
+
+authorization:
+  authorized: false
+  reference: null
+  validated_at: null
+  validated_by: null
+
+app:
+  package: com.dts.freefireth
+  activity: com.dts.freefireth.FFMainActivity
+
+order_rules:
+  player_id_pattern: "^[0-9]{6,12}$"
+  accept_server_catalog: true
+  default_category: pase
+  products:
+    pase_booyah: Pase Booyah Premium
+    caja_tokens_evo_universales: Caja de Tokens evo universales
+    token_universal_arma_evo: Token Universal Arma Evo
+
+calibration:
+  validated: true
+  resolution: [1600, 900]
+
+screens:
+  ld_recharge:
+    description: Ventana de LDPlayer «Recargar Free Fire vía LDPlayer» (compras reales; solo se cierra)
+    markers: [{region: [0.3125, 0.1667, 0.6875, 0.2556], ocr: "Recargar"}]
+  lobby:
+    description: Lobby principal con el menú TIENDA
+    markers: [{region: [0.0094, 0.3, 0.0938, 0.3467], image: lobby_tienda.png}]
+  store:
+    description: TIENDA
+    markers: [{region: [0.8781, 0.0133, 0.9375, 0.0578], image: tienda_titulo.png}]
+  gift_store:
+    description: TIENDA, pestaña de regalo
+    markers:
+      - {region: [0.8781, 0.0133, 0.9375, 0.0578], image: tienda_titulo.png}
+      - {region: [0.07, 0.9089, 0.1388, 0.9578], image: pestana_regalo.png}
+  friend_picker:
+    description: Panel de amigos para regalar con «Introduce apodo o ID»
+    markers: [{region: [0.7825, 0.0089, 0.8825, 0.0689], image: selector_cabecera.png}]
+  recipient_selected:
+    description: Pestaña de regalo con un amigo elegido y el botón amarillo de regalo
+    markers:
+      - {region: [0.8781, 0.0133, 0.9375, 0.0578], image: tienda_titulo.png}
+      - {region: [0.07, 0.9089, 0.1388, 0.9578], image: pestana_regalo.png}
+      - {region: [0.8125, 0.8889, 0.9094, 0.9533], image: boton_regalo.png}
+  friends:
+    description: Pantalla AMIGOS (se cierra si quedó abierta)
+    markers: [{region: [0.8719, 0.0133, 0.9406, 0.0578], image: amigos_titulo.png}]
+  gift_confirm:
+    description: CONFIRMAR REGALO con destinatario, objeto, cantidad y botón de precio
+    markers: [{region: [0.6, 0.1667, 0.7938, 0.2278], ocr: "CONFIRMAR REGALO"}]
+  gift_result_success:
+    description: Aviso «Regalado con éxito» de vuelta en la pestaña de regalo
+    markers:
+      - {region: [0.8781, 0.0133, 0.9375, 0.0578], image: tienda_titulo.png}
+      - {region: [0.07, 0.9089, 0.1388, 0.9578], image: pestana_regalo.png}
+      - {region: [0.8125, 0.8889, 0.9094, 0.9533], image: boton_regalo.png}
+      - {region: [0.4313, 0.12, 0.5688, 0.1644], image: regalado_con_exito.png, min_score: 0.93}
+
+elements:
+  close_ld_popup: {description: X de la ventana de recarga de LDPlayer, calibrated: [0.7606, 0.1856]}
+  open_store: {description: TIENDA en el lobby, calibrated: [0.0531, 0.3233]}
+  open_gift_tab: {description: Pestaña de regalo (abajo a la izquierda), calibrated: [0.1044, 0.9333]}
+  tab_objeto: {description: Categoría OBJETO, calibrated: [0.0688, 0.1422]}
+  "cat_Caja de Tokens evo universales": {description: Subcategoría de cajas, calibrated: [0.1675, 0.2556]}
+  "cat_Pase Booyah Premium": {description: Subcategoría de pases y tokens, calibrated: [0.1675, 0.3744]}
+  "cat_Token Universal Arma Evo": {description: Subcategoría de pases y tokens, calibrated: [0.1675, 0.3744]}
+  "item_Caja de Tokens evo universales": {description: Caja (50 💎), calibrated: [0.2856, 0.2367]}
+  "item_Pase Booyah Premium": {description: Pase Booyah Premium (300 💎), calibrated: [0.2856, 0.2367]}
+  "item_Token Universal Arma Evo": {description: Token Universal Arma Evo (10 💎), calibrated: [0.4594, 0.2367]}
+  pick_recipient:
+    description: «+ SELECCIONAR A UN JUGADOR» o «⇄» si ya hay uno elegido
+    calibrated: [0.7906, 0.9211]
+  friend_search_field: {description: Campo «Introduce apodo o ID», calibrated: [0.8844, 0.1089]}
+  friend_search_button: {description: Lupa del selector, calibrated: [0.975, 0.1089]}
+  friend_result: {description: Primera fila del selector, calibrated: [0.8863, 0.1833]}
+  friend_not_in_list:
+    description: Selector sin resultados (aún no es amigo)
+    region: [0.7825, 0.1444, 0.9925, 0.2278]
+    image: selector_vacio.png
+    min_score: 0.97
+  gift_button: {description: Botón amarillo de regalo junto al amigo, calibrated: [0.8594, 0.9211]}
+  qty_plus: {description: Botón + de cantidad, calibrated: [0.8219, 0.7078]}
+  price_button: {description: Botón con el precio en diamantes (ENVÍA y descuenta), calibrated: [0.7019, 0.8022]}
+  close_store: {description: X de la TIENDA (y de AMIGOS), calibrated: [0.9781, 0.0356]}
+  close_picker: {description: Flecha que cierra el panel de amigos, calibrated: [0.7606, 0.5]}
+  close_confirm: {description: X de CONFIRMAR REGALO (cierra sin enviar), calibrated: [0.8606, 0.1733]}
+
+fields:
+  balance:
+    description: Saldo de diamantes de la cuenta emisora (barra superior)
+    region: [0.3313, 0.0156, 0.3906, 0.06]
+    reader: digits
+    digits: saldo
+    skip_last: 1
+    match: number
+  confirm_recipient:
+    description: Destinatario en CONFIRMAR REGALO
+    region: [0.2563, 0.3056, 0.4188, 0.3444]
+    reader: ocr
+    match: fuzzy
+  confirm_product:
+    description: Nombre del objeto en CONFIRMAR REGALO
+    region: [0.6031, 0.5589, 0.7906, 0.6]
+    reader: ocr
+    match: fuzzy
+  confirm_total_cost:
+    description: Precio total en el botón de envío
+    region: [0.6719, 0.7778, 0.7531, 0.8278]
+    reader: ocr
+    scale: 2
+    match: number
+
+steps:
+  - {id: open_app, kind: launch_app}
+  - {id: close_ld_popup, kind: tap, element: close_ld_popup, when_screen: ld_recharge, optional: true}
+  # Si un pedido anterior quedó a medias, se vuelve al lobby (cada paso solo actúa en su pantalla).
+  - {id: close_picker, kind: tap, element: close_picker, when_screen: friend_picker, optional: true}
+  - {id: close_confirm, kind: tap, element: close_confirm, when_screen: gift_confirm, optional: true}
+  - {id: leave_selected, kind: tap, element: close_store, when_screen: recipient_selected, optional: true}
+  - {id: leave_gift_store, kind: tap, element: close_store, when_screen: gift_store, optional: true}
+  - {id: leave_store, kind: tap, element: close_store, when_screen: store, optional: true}
+  - {id: leave_friends, kind: tap, element: close_store, when_screen: friends, optional: true}
+  - {id: wait_lobby, kind: wait_screen, screen: lobby}
+  - {id: store, kind: tap, element: open_store}
+  - {id: gift_tab, kind: tap, element: open_gift_tab, expect: gift_store}
+  - {id: read_balance, kind: read_balance, field: balance, optional: true}
+  - {id: objeto, kind: tap, element: tab_objeto}
+  - {id: category, kind: tap, element: "cat_{product.label}"}
+  - {id: item, kind: tap, element: "item_{product.label}"}
+  - {id: pick, kind: tap, element: pick_recipient, expect: friend_picker}
+  - {id: focus_search, kind: tap, element: friend_search_field}
+  - {id: type_name, kind: input_text, element: friend_search_field, value: "{recipient.nickname}", press_enter: true}
+  - id: search
+    kind: tap
+    element: friend_search_button
+    exits:
+      - {element: friend_not_in_list, outcome: defer, reason: not_friend_yet, code: NOT_FRIEND_YET,
+         message: "El jugador todavía no aceptó la solicitud de amistad"}
+  - {id: choose_friend, kind: tap, element: friend_result, expect: recipient_selected}
+  - {id: open_confirm, kind: tap, element: gift_button, expect: gift_confirm}
+  - {id: quantity, kind: tap_repeat, element: qty_plus, value: "{product.quantity}", start: 1}
+  - id: verify_summary
+    kind: verify_fields
+    screen: gift_confirm
+    checks:
+      confirm_recipient: "{recipient.nickname}"
+      confirm_product: "{product.label}"
+      confirm_total_cost: "{product.total_cost}"
+  - {id: send, kind: commit, element: price_button, result_screens: [gift_result_success]}
+  - id: verify_result
+    kind: verify_result
+    success_screen: gift_result_success
+  - {id: back_to_lobby, kind: tap, element: close_store, expect: lobby, optional: true}

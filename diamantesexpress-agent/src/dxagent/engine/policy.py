@@ -8,7 +8,7 @@ from pathlib import Path
 
 from dxagent.android.device import validate_text
 
-ALLOWED_ACTIONS = {"launch_app", "tap", "input_text", "key_back", "screenshot", "dump_ui"}
+ALLOWED_ACTIONS = {"launch_app", "tap", "input_text", "key_back", "key_enter", "screenshot", "dump_ui"}
 
 
 class PolicyViolation(Exception):
@@ -54,7 +54,7 @@ class ExecutionPolicy:
         self.check_time()
         if action not in ALLOWED_ACTIONS:
             raise PolicyViolation("ACTION_NOT_ALLOWED", f"Acción no permitida: {action}")
-        if action in {"tap", "input_text", "key_back", "launch_app"}:
+        if action in {"tap", "input_text", "key_back", "key_enter", "launch_app"}:
             if self.actions >= self.limits.max_actions:
                 raise PolicyViolation("MAX_ACTIONS", "Se alcanzó el máximo de acciones por pedido")
             self.actions += 1

@@ -7,14 +7,16 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
 from dxagent import paths
 from dxagent.models import Job
 
 PLACEHOLDER = "<VERIFICAR"
 StepKind = Literal["launch_app", "navigate_to", "wait_screen", "tap", "input_text", "tap_option",
-                   "verify_fields", "commit", "verify_result", "set_quantity", "read_balance"]
+                   "verify_fields", "commit", "verify_result", "set_quantity", "read_balance", "tap_repeat",
+                   "remember_field"]
+Region = tuple[float, float, float, float]   # zona normalizada (x1, y1, x2, y2) en 0..1
 Phase = Literal["friend_request", "gift"]
 ExitOutcome = Literal["completed", "failed", "defer"]
 FRIEND_STATUSES = {"request_sent", "already_friends", "player_not_found"}
@@ -31,9 +33,19 @@ class OrderRejected(Exception):
 
 
 class Marker(BaseModel):
+    """Señal de que algo está en pantalla: nodo de la jerarquía o, sin jerarquía, una zona de la captura que
+    se parece a una imagen de referencia (`image`) o cuyo texto OCR contiene `ocr`."""
     model_config = ConfigDict(extra="forbid")
     resource_id: str | None = None
     text: str | None = None
+    region: Region | None = None
+    image: str | None = None        # archivo en la carpeta de recursos del flujo
+    ocr: str | None = None
+    min_score: float | None = None  # por defecto 0.90 para imagen y 0.80 para OCR
+
+    @property
+    def local(self) -> bool:
+        return self.region is not None and (self.image is not None or self.ocr is not None)
 
 
 class ScreenDef(BaseModel):
@@ -48,6 +60,21 @@ class ElementDef(BaseModel):
     resource_id: str | None = None
     text: str | None = None
     calibrated: tuple[float, float] | None = None  # coordenadas normalizadas validadas
+    # Reconocimiento local (juegos sin jerarquía): presencia del elemento o lectura del campo en una zona.
+    region: Region | None = None
+    image: str | None = None
+    ocr: str | None = None
+    min_score: float | None = None
+    reader: Literal["ocr", "digits"] | None = None   # campos: OCR de Windows o dígitos por plantilla
+    digits: str | None = None        # carpeta de plantillas 0.png … 9.png dentro de los recursos del flujo
+    skip_last: int = 0               # símbolos fijos al final del número (p. ej. «+» del saldo)
+    threshold: int = 170             # dígitos: brillo mínimo del texto
+    scale: int = 3                   # OCR: ampliación de la zona
+    match: Literal["exact", "fuzzy", "number"] = "exact"   # cómo se compara al verificar
+
+    def as_marker(self) -> Marker:
+        return Marker(resource_id=self.resource_id, text=self.text, region=self.region, image=self.image,
+                      ocr=self.ocr, min_score=self.min_score)
 
 
 class ExitDef(BaseModel):
@@ -63,6 +90,7 @@ class ExitDef(BaseModel):
     message: str = ""
     friend_status: str | None = None
     reason: str | None = None            # para defer, p. ej. not_friend_yet
+    missing: bool = False                # salir cuando el elemento NO está (p. ej. sin botón de añadir: ya son amigos)
 
 
 class StepDef(BaseModel):
@@ -88,6 +116,10 @@ class StepDef(BaseModel):
     failure_screen: str | None = None
     failure_is_definitive: bool = False
     reference_field: str | None = None
+    when_screen: str | None = None       # el paso solo se ejecuta si se está en esta pantalla (p. ej. un aviso)
+    start: int = 1                       # tap_repeat: valor inicial; se pulsa (value - start) veces
+    memory_key: str | None = None        # remember_field: clave donde se guarda el campo (p. ej. apodo)
+    press_enter: bool = False            # input_text: confirmar con Enter (p. ej. buscador de Free Fire)
 
 
 class AppDef(BaseModel):
@@ -132,6 +164,12 @@ class WorkflowDef(BaseModel):
     elements: dict[str, ElementDef] = Field(default_factory=dict)
     fields: dict[str, ElementDef] = Field(default_factory=dict)
     steps: list[StepDef]
+    assets: str | None = None            # carpeta de recursos (imágenes, dígitos) junto al YAML; por defecto <id>
+    _assets: Path | None = PrivateAttr(default=None)   # carpeta <id>/ junto al YAML: imágenes y plantillas
+
+    @property
+    def assets_dir(self) -> Path | None:
+        return self._assets
 
     @model_validator(mode="after")
     def _references(self) -> "WorkflowDef":
@@ -144,7 +182,8 @@ class WorkflowDef(BaseModel):
         if not any(s.kind == "verify_fields" and index[s.id] < index[commits[0].id] for s in self.steps):
             raise ValueError("Antes del paso 'commit' debe existir un paso 'verify_fields'")
         for step in self.steps:
-            for ref in (step.screen, step.expect, step.success_screen, step.failure_screen, *step.result_screens):
+            for ref in (step.screen, step.expect, step.success_screen, step.failure_screen, step.when_screen,
+                        *step.result_screens):
                 if ref and ref not in self.screens:
                     raise ValueError(f"Paso {step.id}: pantalla desconocida {ref}")
             for element in (step.element, step.plus, step.minus, *(e.element for e in step.exits)):
@@ -159,6 +198,10 @@ class WorkflowDef(BaseModel):
                     raise ValueError(f"Paso {step.id}: friend_status inválido {exit_def.friend_status}")
             if step.kind == "set_quantity" and not (step.plus and step.minus and step.field and step.value):
                 raise ValueError(f"Paso {step.id}: set_quantity requiere plus, minus, field y value")
+            if step.kind == "tap_repeat" and not (step.element and step.value):
+                raise ValueError(f"Paso {step.id}: tap_repeat requiere element y value")
+            if step.kind == "remember_field" and not (step.field and step.memory_key):
+                raise ValueError(f"Paso {step.id}: remember_field requiere field y memory_key")
             if step.kind == "read_balance" and not step.field:
                 raise ValueError(f"Paso {step.id}: read_balance requiere field")
         return self
@@ -195,7 +238,9 @@ def load_workflow(workflow_id: str, directory: Path | None = None) -> WorkflowDe
     pending = _find_placeholders(raw)
     if pending:
         raise WorkflowNotReady("El flujo tiene valores sin verificar: " + ", ".join(pending[:8]))
-    return WorkflowDef.model_validate(raw)
+    workflow = WorkflowDef.model_validate(raw)
+    workflow._assets = file.parent / (workflow.assets or workflow_id)
+    return workflow
 
 
 def check_mode_allowed(workflow: WorkflowDef, mode: str, backend_production_authorized: bool) -> None:

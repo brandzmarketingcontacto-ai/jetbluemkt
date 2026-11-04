@@ -14,6 +14,9 @@ datas = [(str(SRC / "dxagent" / "resources"), "dxagent/resources")]
 hidden = [
     "keyring.backends.Windows", "keyring.backends.fail", "win32ctypes.core",
     "dxagent.ui.app", "dxagent.service.bootstrap",
+    # OCR de Windows para el reconocimiento local (Free Fire)
+    "winrt.windows.media.ocr", "winrt.windows.graphics.imaging", "winrt.windows.storage.streams",
+    "winrt.windows.foundation", "winrt.windows.globalization",
 ]
 
 a = Analysis(
