@@ -59,6 +59,18 @@ def test_status_and_launch_by_index_or_name(ld_dir, caplog):
     assert main.is_running() is True
 
 
+
+def test_adb_enabled_read_from_instance_config(ld_dir):
+    console = FakeConsole()
+    manager = LDPlayerManager(str(ld_dir), instance="0", console_runner=console, registry=lambda: None)
+    assert manager.status()["adb_enabled"] is None  # sin archivo: no se sabe
+    config = ld_dir / "vms" / "config"
+    config.mkdir(parents=True)
+    (config / "leidian0.config").write_text('{"basicSettings.adbDebug": 0, "x": 1}', encoding="utf-8")
+    assert manager.status()["adb_enabled"] is False
+    (config / "leidian0.config").write_text('{"basicSettings.adbDebug": 1}', encoding="utf-8")
+    assert manager.status()["adb_enabled"] is True
+
 def test_not_installed_gives_clear_error(tmp_path):
     manager = LDPlayerManager(str(tmp_path / "no"), console_runner=FakeConsole(), registry=lambda: None)
     if not manager.installed:
@@ -120,6 +132,18 @@ def test_cli_configure_used_by_installer():
     assert main(["configure", "--emulator", "none"]) == 0
     assert SettingsManager().load().device_backend == "mock"
 
+
+
+def test_cli_output_redirected_to_cp1252_console(monkeypatch):
+    """Salida redirigida en Windows (cp1252): los mensajes con «→» no deben hacer caer el comando."""
+    import io
+
+    from dxagent.cli import main
+    raw = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(raw, encoding="cp1252"))
+    assert main(["configure", "--emulator", "none"]) == 0
+    sys.stdout.flush()
+    assert b"Configuraci" in raw.getvalue()
 
 def test_settings_page_switches_emulator(qapp):
     from dxagent.settings import SettingsManager

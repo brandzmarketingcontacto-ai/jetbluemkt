@@ -204,7 +204,16 @@ class ADBController:
         apk = Path(apk)
         if apk.name != SIM_APK_NAME or not apk.is_file():
             raise UnauthorizedOperation(f"Solo se instala la app de simulación ({SIM_APK_NAME})")
-        await self.runner.run("install", "-r", str(apk), serial=self.serial, timeout=180)
+        try:
+            await self.runner.run("install", "-r", str(apk), serial=self.serial, timeout=180)
+        except DeviceError as exc:
+            if "INSTALL_FAILED_UPDATE_INCOMPATIBLE" not in str(exc):
+                raise
+            # Cada compilación firma la app ficticia con otra clave de depuración: Android no deja actualizarla.
+            # Se reemplaza solo esa app (su estado es de pruebas); nunca se desinstala otra aplicación.
+            log.warning("La app de simulación instalada tiene otra firma: se reinstala")
+            await self.runner.run("uninstall", SIM_APK_PACKAGE, serial=self.serial, timeout=60)
+            await self.runner.run("install", "-r", str(apk), serial=self.serial, timeout=180)
         return await self.is_package_installed(SIM_APK_PACKAGE)
 
     async def is_package_installed(self, package: str) -> bool:

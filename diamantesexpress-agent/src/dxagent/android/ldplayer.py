@@ -13,6 +13,7 @@ La instancia N expone `emulator-(5554 + 2N)` / `127.0.0.1:(5555 + 2N)`; no se as
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import subprocess
 import sys
@@ -151,6 +152,17 @@ class LDPlayerManager:
             return ["--name", self.instance]
         return ["--index", "0"]
 
+    def adb_enabled(self, info: LDInstance | None) -> bool | None:
+        """`basicSettings.adbDebug` de vms/config/leidianN.config (0 = cerrada; 1 local, 2 remota). None = no se sabe."""
+        if not self.install_dir or info is None:
+            return None
+        path = Path(self.install_dir) / "vms" / "config" / f"leidian{info.index}.config"
+        try:
+            value = json.loads(path.read_text(encoding="utf-8", errors="replace")).get("basicSettings.adbDebug")
+        except (OSError, ValueError, AttributeError):
+            return None
+        return bool(value) if isinstance(value, int) else None
+
     def status(self) -> dict[str, Any]:
         instances = self.instances()
         info = self.instance_info(instances)
@@ -160,7 +172,7 @@ class LDPlayerManager:
             "install_dir": self.install_dir,
             "console": self.console,
             "adb_path": self.runner.adb_path if self.runner else None,
-            "adb_enabled": None,  # LDPlayer no lo expone por consola: verificar en Configuración → Otros ajustes
+            "adb_enabled": self.adb_enabled(info),
             "instances": {str(i.index): {"display_name": i.name, "adb_port": i.adb_port,
                                          "serial": i.emulator_serial, "running": i.android_started or i.pid > 0}
                           for i in instances.values()},

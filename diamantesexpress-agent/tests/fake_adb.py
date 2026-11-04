@@ -33,6 +33,14 @@ if args[:2] == ["-s", "127.0.0.1:5565"]:
     elif rest[:3] == ["shell", "pm", "path"]:
         print("package:/data/app/base.apk" if rest[3] == "com.diamantesexpress.giftsim" else "")
     elif rest[:2] == ["install", "-r"]:
+        uninstalled = os.environ["FAKE_ADB_LOG"] + ".uninstalled"
+        if os.environ.get("FAKE_ADB_SIGNATURE_MISMATCH") and not os.path.exists(uninstalled):
+            sys.stderr.write("adb: failed to install app.apk: Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: "
+                             "Package com.diamantesexpress.giftsim signatures do not match previously installed version]\n")
+            sys.exit(1)
+        print("Success")
+    elif rest[:1] == ["uninstall"]:
+        open(os.environ["FAKE_ADB_LOG"] + ".uninstalled", "w").close()
         print("Success")
     elif rest[:2] == ["shell", "getprop"]:
         print("1")

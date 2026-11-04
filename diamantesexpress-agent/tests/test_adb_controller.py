@@ -81,3 +81,16 @@ async def test_install_only_the_simulator_apk(fake_adb, tmp_path):
         await device.install_simulator_apk(other)
     with pytest.raises(UnauthorizedOperation):
         await device.install_simulator_apk(tmp_path / "falta" / SIM_APK_NAME)
+
+
+async def test_simulator_apk_signed_with_another_key_is_replaced(fake_adb, tmp_path, monkeypatch):
+    """Cada compilación firma la app ficticia con otra clave de depuración: se reinstala solo esa app."""
+    from dxagent.android.adb import SIM_APK_NAME
+    exe, calls = fake_adb
+    monkeypatch.setenv("FAKE_ADB_SIGNATURE_MISMATCH", "1")
+    device = ADBController(AdbRunner(exe, timeout=10), "127.0.0.1:5565")
+    apk = tmp_path / SIM_APK_NAME
+    apk.write_bytes(b"PK")
+    assert await device.install_simulator_apk(apk) is True
+    assert ["-s", "127.0.0.1:5565", "uninstall", "com.diamantesexpress.giftsim"] in calls()
+    assert [c for c in calls() if c[2:3] == ["install"]][-1] == ["-s", "127.0.0.1:5565", "install", "-r", str(apk)]
