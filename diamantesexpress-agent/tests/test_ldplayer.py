@@ -43,7 +43,8 @@ def test_parse_list2():
     assert (inst[1].emulator_serial, inst[1].adb_port) == ("emulator-5556", 5557)
 
 
-def test_status_and_launch_by_index_or_name(ld_dir):
+def test_status_and_launch_by_index_or_name(ld_dir, caplog):
+    caplog.set_level("INFO", logger="dxagent")  # el registro de inicio también debe poder escribirse
     console = FakeConsole()
     by_name = LDPlayerManager(str(ld_dir), instance="Pruebas DX", console_runner=console, registry=lambda: None)
     st = by_name.status()

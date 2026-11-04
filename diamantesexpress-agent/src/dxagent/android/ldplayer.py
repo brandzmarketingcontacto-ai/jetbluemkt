@@ -182,7 +182,7 @@ class LDPlayerManager:
         if not self.console:
             raise DeviceError("LDPlayer 9 no está instalado o no se encontró ldconsole.exe. Configure la carpeta.")
         args = ["launch", *self._target_args(self.instance_info())]
-        log.info("Iniciando LDPlayer", extra={"args": args})
+        log.info("Iniciando LDPlayer", extra={"console_args": args})
         self._run_console(self.console, args)
         self.last_launch_at = time.monotonic()
 
