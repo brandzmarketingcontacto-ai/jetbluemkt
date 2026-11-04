@@ -187,6 +187,28 @@ class WorkflowEngine:
             outcome.balance = self.balance
         return outcome
 
+    async def read_balance_only(self) -> int | None:
+        """Lee el saldo de la cuenta emisora sin tocar ningún pedido (abre la app autorizada y lee la pantalla)."""
+        step = next((s for s in self.wf.steps if s.kind == "read_balance" and s.field), None)
+        if step is None:
+            return None
+        policy = ExecutionPolicy(
+            ExecutionLimits(self.cfg.max_actions, self.cfg.max_duration_s, self.cfg.max_consecutive_errors),
+            {self.wf.app.package}, self.emergency_flag)
+        observer = ScreenObserver(self.device, self.wf, self.vision, policy, "saldo", "saldo", self.cfg.min_confidence)
+        apps = AndroidAppManager(self.device, {self.wf.app.package})
+        try:
+            if not await apps.is_foreground(self.wf.app.package):
+                policy.authorize("launch_app", package=self.wf.app.package, step_id="saldo")
+                await apps.ensure_open(self.wf.app.package, self.wf.app.activity)
+                await asyncio.sleep(self.cfg.settle_s)
+            obs = await observer.observe("Leer el saldo de diamantes")
+            values, _ = await observer.read_fields([step.field], obs, "Leer el saldo de diamantes")
+        except (PolicyViolation, BudgetExceeded, DeviceError, VisionUnavailable, ObservationError) as exc:
+            log.warning("No se pudo leer el saldo de diamantes: %s", exc)
+            return None
+        return parse_int(values.get(step.field))
+
     async def _run(self, job: Job) -> JobOutcome:
         def result(status: JobStatus, code: str | None, message: str, **kw: Any) -> JobOutcome:
             return JobOutcome(job_id=job.job_id, order_id=job.order_id, status=status, error_code=code,

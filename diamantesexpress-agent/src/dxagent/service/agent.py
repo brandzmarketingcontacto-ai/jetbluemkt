@@ -100,6 +100,7 @@ class AgentService:
         self.sim_friend_workflow: WorkflowDef | None = None
         self.diamond_balance: int | None = None   # saldo leído en pantalla; se informa en el heartbeat
         self._balance_dirty = False
+        self._balance_probe_at: float | None = None
         self.device_factory = device_factory
         self.device: DeviceController | None = None
         self.evidence = EvidenceManager(db, evidence_root or paths.evidence_dir())
@@ -446,6 +447,8 @@ class AgentService:
             self.set_state(AgentState.BUDGET_EXHAUSTED, "límite de gasto alcanzado en DiamantesExpress")
             return False
         if job is None and self.api.state.last_reason == "insufficient_balance":
+            if self.diamond_balance is None and await self.probe_balance(device):
+                return False  # el siguiente ciclo informa el saldo leído y vuelve a reclamar
             srv = self.api.state
             reason = (f"saldo de diamantes insuficiente: se necesitan {srv.balance_needed}, "
                       f"saldo {srv.server_diamond_balance if srv.server_diamond_balance is not None else self.diamond_balance}")
@@ -483,6 +486,40 @@ class AgentService:
             return wf, "SUPERVISED", ""
         return None, "", f"modo de tarea no soportado: {job.server_mode}"
 
+    async def probe_balance(self, device: DeviceController) -> bool:
+        """Sin saldo conocido, DiamantesExpress lo toma como 0 y no entrega regalos; y el agente solo lo leía al
+        regalar. Se lee en la app de la cuenta emisora (como mucho cada 5 min). True si se obtuvo un saldo."""
+        now = time.monotonic()
+        if self._balance_probe_at is not None and now - self._balance_probe_at < 300:
+            return False
+        self._balance_probe_at = now
+        simulated = self.api.state.mode == "simulation"
+        workflow = self.workflow_for("gift", simulated)
+        if workflow is None:
+            return False
+        engine = self._engine(workflow, "SIMULATION" if simulated else self.settings.automation_mode.value, device)
+        balance = await engine.read_balance_only()
+        if balance is None:
+            return False
+        log.info("Saldo de diamantes leído en la app: %s", balance)
+        self.diamond_balance, self._balance_dirty = balance, True
+        return True
+
+    def _engine(self, workflow: WorkflowDef, mode: str, device: DeviceController) -> WorkflowEngine:
+        s = self.settings
+        cfg = EngineConfig(
+            mode=mode, agent_id=self.api.agent_id, max_actions=s.max_actions_per_order,
+            max_duration_s=s.max_order_duration_seconds, max_step_retries=s.max_step_retries,
+            max_consecutive_errors=s.max_consecutive_errors, screen_wait_timeout_s=s.screen_wait_timeout_seconds,
+            approval_timeout_s=s.approval_timeout_seconds, min_confidence=s.ai_min_confidence,
+            verify_result_with_ai=s.verify_result_with_ai)
+        for key, value in self.engine_overrides.items():
+            setattr(cfg, key, value)
+        return WorkflowEngine(db=self.db, device=device, workflow=workflow, config=cfg,
+                              approvals=self.approvals, evidence=self.evidence, vision=self.vision,
+                              verify_job_still_assigned=self._job_still_assigned,
+                              emergency_flag=self.emergency_flag, live_screenshot=self.live_screenshot)
+
     async def process_job(self, job: Job, device: DeviceController) -> JobOutcome:
         self.current_job = job
         workflow, mode, problem = self.plan_for(job)
@@ -493,19 +530,7 @@ class AgentService:
             self.db.add_alert(f"mode_mismatch:{job.job_id}", "WARNING", "MODE_MISMATCH", f"{job.order_id}: {problem}")
             self.current_job = None
             return outcome
-        s = self.settings
-        cfg = EngineConfig(
-            mode=mode, agent_id=self.api.agent_id, max_actions=s.max_actions_per_order,
-            max_duration_s=s.max_order_duration_seconds, max_step_retries=s.max_step_retries,
-            max_consecutive_errors=s.max_consecutive_errors, screen_wait_timeout_s=s.screen_wait_timeout_seconds,
-            approval_timeout_s=s.approval_timeout_seconds, min_confidence=s.ai_min_confidence,
-            verify_result_with_ai=s.verify_result_with_ai)
-        for key, value in self.engine_overrides.items():
-            setattr(cfg, key, value)
-        engine = WorkflowEngine(db=self.db, device=device, workflow=workflow, config=cfg,
-                                approvals=self.approvals, evidence=self.evidence, vision=self.vision,
-                                verify_job_still_assigned=self._job_still_assigned,
-                                emergency_flag=self.emergency_flag, live_screenshot=self.live_screenshot)
+        engine = self._engine(workflow, mode, device)
         keeper = asyncio.create_task(self._keep_lease(job))
         try:
             outcome = await engine.run(job)

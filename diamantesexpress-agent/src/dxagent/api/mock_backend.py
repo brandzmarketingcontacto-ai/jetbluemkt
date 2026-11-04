@@ -70,6 +70,7 @@ class MockDiamantesExpressBackend:
         self.sender_account_id = "123456789"
         self.balance_threshold = 1000
         self.diamond_balance: int | None = None
+        self.unknown_balance_is_zero = False  # así se comporta la tienda publicada si nunca recibió saldo
         self.orders: dict[str, dict[str, Any]] = {}
         self.defers: list[dict] = []
         self.tasks: dict[str, dict[str, Any]] = {}
@@ -224,11 +225,12 @@ class MockDiamantesExpressBackend:
             t = self.tasks[task_id]
             if not self._eligible(t, now):
                 continue
-            if t["phase"] == "gift" and self.diamond_balance is not None and t["unitDiamondCost"] is not None:
+            balance = 0 if self.diamond_balance is None and self.unknown_balance_is_zero else self.diamond_balance
+            if t["phase"] == "gift" and balance is not None and t["unitDiamondCost"] is not None:
                 needed = int(t["quantity"] or 0) * int(t["unitDiamondCost"])
-                if self.diamond_balance < needed:
+                if balance < needed:
                     return 200, {**base, "task": None, "reason": "insufficient_balance", "needed": needed,
-                                 "balance": self.diamond_balance}
+                                 "balance": balance}
             t.update(status="processing", owner=agent, attempts=t["attempts"] + 1, claimedAt=now.isoformat(),
                      leaseExpiresAt=(now + timedelta(seconds=self.lease_seconds)).isoformat(),
                      mode=self.mode, updatedAt=now.isoformat())

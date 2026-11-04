@@ -91,15 +91,31 @@ async def test_local_insufficient_balance_blocks_commit(agent_factory, backend, 
 
 
 async def test_server_insufficient_balance_holds_agent(agent_factory, backend, device, db):
-    backend.diamond_balance = 10
+    backend.diamond_balance = device.diamond_balance = 10
     backend.add_task(task_id="t_srv", kind="caja_tokens_evo_universales", quantity=57)
     agent = agent_factory()
     await agent.startup()
-    assert await agent.work_once() is False
+    assert await agent.work_once() is False      # sin saldo local: lo lee en la app (10)
+    assert agent.diamond_balance == 10
+    assert await agent.work_once() is False      # lo informa y la tienda sigue sin entregar el regalo
     assert agent.api.state.last_reason == "insufficient_balance"
     assert agent.api.state.balance_needed == 57 * 50
     assert agent.state == AgentState.SERVER_HOLD
     assert db.get_job("t_srv") is None
+
+
+async def test_unknown_balance_is_read_from_the_app_before_holding(agent_factory, backend, device, db):
+    """La tienda publicada toma «sin saldo informado» como 0: el agente lee el saldo en la app y lo informa."""
+    backend.unknown_balance_is_zero = True
+    backend.add_task(task_id="t_unk", kind="caja_tokens_evo_universales", quantity=57)
+    agent = agent_factory()
+    await agent.startup()
+    assert await agent.work_once() is False      # retenido: lee el saldo en la app, sin regalar nada
+    assert agent.diamond_balance == device.diamond_balance and device.transactions == []
+    await run_until_idle(agent)                   # informa el saldo y la tienda entrega el regalo
+    assert backend.diamond_balance is not None
+    assert db.get_job("t_unk")["status"] == JobStatus.COMPLETED.value
+    assert [tx.quantity for tx in device.transactions] == [57]
 
 
 async def test_v10_task_without_phase_fields_still_works(agent_factory, backend, device, db):
