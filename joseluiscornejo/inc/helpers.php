@@ -116,6 +116,22 @@ function youtube_id(string $url): string {
     return '';
 }
 
+function is_short(string $url): bool {
+    return str_contains($url, '/shorts/');
+}
+
+// Título del video desde YouTube (oEmbed). Devuelve '' si no se puede obtener.
+function youtube_title(string $url): string {
+    $id = youtube_id($url);
+    if ($id === '' || !function_exists('curl_init')) return '';
+    $ch = curl_init('https://www.youtube.com/oembed?format=json&url=' . rawurlencode('https://www.youtube.com/watch?v=' . $id));
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 6, CURLOPT_CONNECTTIMEOUT => 4]);
+    $res = curl_exec($ch);
+    curl_close($ch);
+    $data = $res ? json_decode($res, true) : null;
+    return trim((string)($data['title'] ?? ''));
+}
+
 function whatsapp_link(string $text = ''): string {
     $n = preg_replace('/\D/', '', s('whatsapp'));
     return 'https://wa.me/' . $n . ($text ? '?text=' . rawurlencode($text) : '');

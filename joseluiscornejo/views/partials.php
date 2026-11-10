@@ -37,10 +37,11 @@ function book_card(array $p): void { ?>
 
 function post_card(array $p): void {
     $yt = youtube_id((string)$p['youtube_url']);
+    if ($p['type'] === 'video' && $yt === '') return; // video sin enlace: no se muestra
     if ($p['type'] === 'video'): ?>
       <article class="post-video">
         <?php if ($yt): ?>
-          <div class="video"><iframe src="https://www.youtube-nocookie.com/embed/<?= e($yt) ?>" title="<?= e($p['title']) ?>" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>
+          <div class="video<?= is_short((string)$p['youtube_url']) ? ' short' : '' ?>"><iframe src="https://www.youtube-nocookie.com/embed/<?= e($yt) ?>?rel=0" title="<?= e($p['title']) ?>" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>
         <?php else: ?>
           <a class="video video-ph" href="<?= e(s('youtube_url') ?: '#') ?>" target="_blank" rel="noopener" aria-label="Ver en YouTube"><span class="play"><svg width="22" height="22" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg></span></a>
         <?php endif; ?>

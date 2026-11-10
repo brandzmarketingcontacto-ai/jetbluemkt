@@ -93,3 +93,8 @@ td.r{text-align:right;white-space:nowrap}
   .side nav{flex-direction:row;flex-wrap:wrap}
   .main{padding:20px 16px}
 }
+
+.yt-thumb{width:96px;border-radius:8px;display:block}
+.quick{display:flex;flex-direction:column;gap:10px}
+.quick label{font-size:14px}
+.grow{flex:1 1 260px;width:auto}

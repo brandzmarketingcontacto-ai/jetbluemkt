@@ -41,7 +41,29 @@ function db(): PDO {
 // Actualizaciones para sitios ya instalados (se aplican una sola vez).
 function migrate(PDO $pdo): void {
     $v = (int)$pdo->query("SELECT v FROM settings WHERE k = 'schema_version'")->fetchColumn();
-    if ($v >= 2) return;
+    if ($v < 2) migrate_v2($pdo);
+    if ($v < 3) {
+        // v3: Shorts de YouTube del canal
+        $shorts = [
+            'https://www.youtube.com/shorts/I0gJm-77MGs',
+            'https://www.youtube.com/shorts/2PVSh0ddDE8',
+            'https://www.youtube.com/shorts/Lw8i_JnghSE',
+        ];
+        $chk = $pdo->prepare('SELECT COUNT(*) FROM posts WHERE youtube_url LIKE ?');
+        $ins = $pdo->prepare("INSERT INTO posts (type, title, slug, excerpt, body, youtube_url, published, created_at) VALUES ('video', ?, ?, '', '', ?, 1, ?)");
+        foreach ($shorts as $i => $url) {
+            $id = substr($url, -11);
+            $chk->execute(['%' . $id . '%']);
+            if ($chk->fetchColumn()) continue;
+            $title = function_exists('youtube_title') ? youtube_title($url) : '';
+            // Fechas escalonadas para que se muestren en este orden
+            $ins->execute([$title ?: 'Video', 'video-' . strtolower($id), $url, date('Y-m-d H:i:s', time() - $i)]);
+        }
+        $pdo->exec("INSERT INTO settings (k, v) VALUES ('schema_version', '3') ON DUPLICATE KEY UPDATE v = '3'");
+    }
+}
+
+function migrate_v2(PDO $pdo): void {
     // v2: correcciones del cliente (precio de Amazon, redes, ocultar plática)
     $pdo->exec("UPDATE products SET price = 19.99 WHERE slug = 'ecos-del-pasado' AND price = 20.99");
     $set = $pdo->prepare("INSERT INTO settings (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = IF(v IS NULL OR v = '', VALUES(v), v)");

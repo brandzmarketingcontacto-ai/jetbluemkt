@@ -196,9 +196,15 @@ if ($isPost) {
             case 'save_post':
                 $id = (int)($_POST['id'] ?? 0);
                 $title = trim($_POST['title'] ?? '');
-                if ($title === '') { flash('El título es obligatorio.', 'error'); back('s=escrito&id=' . $id); }
                 $type = in_array($_POST['type'] ?? '', ['escrito', 'video', 'frase'], true) ? $_POST['type'] : 'escrito';
-                $data = [$type, $title, trim($_POST['excerpt'] ?? ''), (string)($_POST['body'] ?? ''), trim($_POST['youtube_url'] ?? ''), empty($_POST['published']) ? 0 : 1];
+                $yt = trim($_POST['youtube_url'] ?? '');
+                if ($type === 'video') {
+                    if (youtube_id($yt) === '') { flash('Pega un enlace válido de YouTube (video o Short).', 'error'); back($id ? 's=escrito&id=' . $id : 's=escritos'); }
+                    if ($title === '') $title = youtube_title($yt) ?: 'Video';
+                    $_POST['published'] = $_POST['published'] ?? (empty($_POST['quick']) ? '' : '1');
+                }
+                if ($title === '') { flash('El título es obligatorio.', 'error'); back('s=escrito&id=' . $id); }
+                $data = [$type, $title, trim($_POST['excerpt'] ?? ''), (string)($_POST['body'] ?? ''), $yt, empty($_POST['published']) ? 0 : 1];
                 if ($id) {
                     db()->prepare('UPDATE posts SET type=?, title=?, excerpt=?, body=?, youtube_url=?, published=? WHERE id=?')->execute([...$data, $id]);
                 } else {
@@ -370,7 +376,7 @@ case 'productos':
         <div class="head"><h1><?= $p['id'] ? 'Editar producto' : 'Nuevo producto' ?></h1><a class="b" href="<?= e($admin('s=productos')) ?>">← Volver</a></div>
         <form class="box form grid" method="post" enctype="multipart/form-data">
           <?= csrf_field() ?><input type="hidden" name="do" value="save_product"><input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
-          <div class="full"><?php field('title', 'Título', $p['title']); ?></div>
+          <div class="full"><?php field('title', 'Título (en videos, si lo dejas vacío se toma el de YouTube)', $p['title']); ?></div>
           <div class="full"><?php field('description', 'Descripción', (string)$p['description'], 'textarea'); ?></div>
           <?php field('price', 'Precio estándar (' . s('currency') . ')', (string)$p['price'], 'number', 'step="0.01" min="0"'); ?>
           <?php field('price_signed', 'Precio firmado y dedicado (vacío = no se ofrece)', (string)$p['price_signed'], 'number', 'step="0.01" min="0"'); ?>
@@ -407,7 +413,7 @@ case 'escritos':
           <div class="fld"><label for="f-type">Tipo</label><select class="in" id="f-type" name="type">
             <?php foreach (['escrito' => 'Escrito (poema o reflexión)', 'video' => 'Video de YouTube', 'frase' => 'Frase del día'] as $k => $l): ?><option value="<?= $k ?>" <?= $p['type'] === $k ? 'selected' : '' ?>><?= $l ?></option><?php endforeach; ?>
           </select></div>
-          <?php field('title', 'Título', $p['title']); ?>
+          <?php field('title', 'Título (en videos, si lo dejas vacío se toma el de YouTube)', $p['title']); ?>
           <?php field('youtube_url', 'Enlace de YouTube (solo para videos; se inserta, no se sube)', (string)$p['youtube_url'], 'url', 'placeholder="https://www.youtube.com/watch?v=..."'); ?>
           <?php field('excerpt', 'Resumen / frase (se muestra en la tarjeta)', (string)$p['excerpt'], 'textarea'); ?>
           <?php rich_field('body', 'Texto completo', (string)$p['body']); ?>
@@ -418,9 +424,14 @@ case 'escritos':
         $rows = db()->query('SELECT * FROM posts ORDER BY created_at DESC, id DESC')->fetchAll(); ?>
         <div class="head"><h1>Escritos y videos</h1>
           <div class="row"><a class="b b-red" href="<?= e($admin('s=escrito&tipo=escrito')) ?>">+ Nuevo escrito</a><a class="b" href="<?= e($admin('s=escrito&tipo=video')) ?>">+ Video de YouTube</a><a class="b" href="<?= e($admin('s=escrito&tipo=frase')) ?>">+ Frase del día</a></div></div>
-        <div class="box tbl"><table><thead><tr><th>Título</th><th>Tipo</th><th>Estado</th><th>Fecha</th><th></th></tr></thead><tbody>
-        <?php foreach ($rows as $p): ?>
-          <tr><td><b><?= e($p['title']) ?></b><?php if ($p['type'] === 'video' && !youtube_id((string)$p['youtube_url'])): ?> <span class="st st-pendiente">falta enlace</span><?php endif; ?></td><td><?= e($p['type']) ?></td>
+        <form class="box quick" method="post">
+          <?= csrf_field() ?><input type="hidden" name="do" value="save_post"><input type="hidden" name="type" value="video"><input type="hidden" name="quick" value="1">
+          <label for="q-yt"><b>Agregar video rápido:</b> pega el enlace de YouTube (video normal o Short)</label>
+          <div class="row"><input class="in grow" id="q-yt" name="youtube_url" type="url" required placeholder="https://www.youtube.com/shorts/..."><button class="b b-red" type="submit">Agregar video</button></div>
+        </form>
+        <div class="box tbl"><table><thead><tr><th></th><th>Título</th><th>Tipo</th><th>Estado</th><th>Fecha</th><th></th></tr></thead><tbody>
+        <?php foreach ($rows as $p): $yid = youtube_id((string)$p['youtube_url']); ?>
+          <tr><td><?php if ($yid): ?><a href="<?= e($p['youtube_url']) ?>" target="_blank" rel="noopener"><img class="yt-thumb" src="https://i.ytimg.com/vi/<?= e($yid) ?>/mqdefault.jpg" alt="Miniatura"></a><?php endif; ?></td><td><b><?= e($p['title']) ?></b><?php if ($p['type'] === 'video' && !youtube_id((string)$p['youtube_url'])): ?> <span class="st st-pendiente">falta enlace</span><?php endif; ?></td><td><?= e($p['type']) ?></td>
             <td><?= $p['published'] ? 'Publicado' : 'Borrador' ?></td><td><?= e(date('d/m/Y', strtotime($p['created_at']))) ?></td>
             <td class="r"><a class="b b-sm" href="<?= e($admin('s=escrito&id=' . $p['id'])) ?>">Editar</a>
               <form method="post" class="inline" onsubmit="return confirm('¿Eliminar?')"><?= csrf_field() ?><input type="hidden" name="do" value="delete_post"><input type="hidden" name="id" value="<?= (int)$p['id'] ?>"><button class="b b-sm b-del" type="submit">Eliminar</button></form></td></tr>
