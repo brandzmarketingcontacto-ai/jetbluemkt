@@ -42,6 +42,10 @@ function db(): PDO {
 function migrate(PDO $pdo): void {
     $v = (int)$pdo->query("SELECT v FROM settings WHERE k = 'schema_version'")->fetchColumn();
     if ($v < 2) migrate_v2($pdo);
+    if ($v < 4) {
+        // v4: botón de Amazon en las redes
+        $pdo->exec("INSERT IGNORE INTO settings (k, v) VALUES ('amazon_url', 'https://www.amazon.com/dp/B0HNT4YBQP')");
+    }
     if ($v < 3) {
         // v3: Shorts de YouTube del canal
         $shorts = [
@@ -59,8 +63,8 @@ function migrate(PDO $pdo): void {
             // Fechas escalonadas para que se muestren en este orden
             $ins->execute([$title ?: 'Video', 'video-' . strtolower($id), $url, date('Y-m-d H:i:s', time() - $i)]);
         }
-        $pdo->exec("INSERT INTO settings (k, v) VALUES ('schema_version', '3') ON DUPLICATE KEY UPDATE v = '3'");
     }
+    if ($v < 4) $pdo->exec("INSERT INTO settings (k, v) VALUES ('schema_version', '4') ON DUPLICATE KEY UPDATE v = '4'");
 }
 
 function migrate_v2(PDO $pdo): void {
@@ -182,6 +186,7 @@ function default_settings(): array {
         'instagram_label' => 'Instagram · @joseluiscornejooficial',
         'youtube_url' => 'https://www.youtube.com/@Joelouiscorne',
         'youtube_label' => 'YouTube · Joe louis corne',
+        'amazon_url' => 'https://www.amazon.com/dp/B0HNT4YBQP',
         'footer_note' => 'Facilitador en desarrollo personal. No es un servicio clínico.',
         // Inicio
         'hero_badge' => 'NUEVO LIBRO · DISPONIBLE YA',

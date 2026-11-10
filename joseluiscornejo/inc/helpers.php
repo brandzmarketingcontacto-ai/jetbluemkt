@@ -132,6 +132,32 @@ function youtube_title(string $url): string {
     return trim((string)($data['title'] ?? ''));
 }
 
+// Redes sociales configuradas en el panel (solo las que tienen enlace).
+function social_links(): array {
+    $icons = [
+        'facebook' => '<path d="M14 8h3V4h-3a4 4 0 0 0-4 4v3H7v4h3v7h4v-7h3l1-4h-4V8z"/>',
+        'instagram' => '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="0.8" fill="currentColor"/>',
+        'youtube' => '<rect x="2.5" y="5.5" width="19" height="13" rx="4"/><path d="M10 9.2v5.6l4.8-2.8z" fill="currentColor"/>',
+        'amazon' => '<path d="M15 10.5c0-3-1.4-4.5-4-4.5-2 0-3.3 1-3.8 2.6"/><path d="M15 10.5V16"/><path d="M15 11.5c-4.5 0-7 1-7 3.2 0 1.6 1.2 2.3 2.6 2.3 2.4 0 4.4-1.8 4.4-4.5"/><path d="M4 18.5c4.5 2.6 11 2.6 16 0"/><path d="M18 17l2.2 1.5-1 2.4"/>',
+    ];
+    $names = ['facebook' => 'Facebook', 'instagram' => 'Instagram', 'youtube' => 'YouTube', 'amazon' => 'Amazon'];
+    $out = [];
+    foreach ($icons as $k => $svg) {
+        $u = s($k . '_url');
+        if ($u !== '') $out[] = ['key' => $k, 'name' => $names[$k], 'url' => $u, 'svg' => $svg];
+    }
+    return $out;
+}
+
+function social_icons(string $class = ''): string {
+    $h = '';
+    foreach (social_links() as $l) {
+        $h .= '<a class="soc soc-' . e($l['key']) . '" href="' . e($l['url']) . '" target="_blank" rel="noopener" aria-label="' . e($l['name']) . '">'
+            . '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . $l['svg'] . '</svg></a>';
+    }
+    return $h ? '<div class="socials ' . e($class) . '">' . $h . '</div>' : '';
+}
+
 function whatsapp_link(string $text = ''): string {
     $n = preg_replace('/\D/', '', s('whatsapp'));
     return 'https://wa.me/' . $n . ($text ? '?text=' . rawurlencode($text) : '');

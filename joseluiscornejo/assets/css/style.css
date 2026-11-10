@@ -156,6 +156,14 @@ textarea.input{resize:vertical}
 .sum{display:flex;justify-content:space-between;gap:16px;color:var(--ink2)}
 .sum-total{font-family:var(--display);font-weight:800;font-size:20px;color:var(--ink);border-top:1px solid var(--line);padding-top:14px}
 
+/* Redes sociales */
+.topbar-r{display:flex;align-items:center;gap:14px}
+.socials{display:flex;gap:8px;align-items:center}
+.soc{width:40px;height:40px;border-radius:50%;border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;color:var(--ink);transition:background .15s,color .15s,border-color .15s}
+.soc:hover{background:var(--red);border-color:var(--red);color:#fff}
+.socials-foot .soc{width:46px;height:46px}
+.footer-soc{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;padding-top:40px;padding-bottom:8px}
+
 /* Footer y flotantes */
 .footer{border-top:1px solid #24211E}
 .footer-in{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;font-size:13px;color:var(--mute);padding-top:32px;padding-bottom:32px}
@@ -165,6 +173,8 @@ textarea.input{resize:vertical}
 /* Móvil tipo app */
 @media (max-width:860px){
   .mainnav{display:none}
+  .socials-top .soc{width:36px;height:36px}
+  .topbar-r{gap:8px}
   .brand-name{font-size:28px}
   .section{padding-top:64px;padding-bottom:64px}
   .hero{padding-top:24px;gap:32px;flex-direction:column-reverse}
@@ -178,6 +188,11 @@ textarea.input{resize:vertical}
   .split-a,.split-b,.hero-a,.hero-b,.product-info{flex-basis:100%}
   .btn-lg{width:100%}
   .row form{width:100%}
+}
+@media (max-width:560px){
+  .topbar-in{flex-wrap:wrap;row-gap:10px}
+  .topbar-r{display:contents}
+  .socials-top{order:3;flex-basis:100%;justify-content:center;gap:10px}
 }
 @media (max-width:420px){
   .wrap,.wrap-narrow{padding-left:16px;padding-right:16px}
