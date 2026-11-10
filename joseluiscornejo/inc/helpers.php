@@ -43,9 +43,24 @@ function base_path(): string {
     return $b;
 }
 
+// ¿El servidor está aplicando las reglas del .htaccess? (las reglas marcan JLC_REWRITE)
+function pretty_urls(): bool {
+    return getenv('JLC_REWRITE') === '1' || getenv('REDIRECT_JLC_REWRITE') === '1'
+        || ($_SERVER['JLC_REWRITE'] ?? '') === '1' || ($_SERVER['REDIRECT_JLC_REWRITE'] ?? '') === '1';
+}
+
 function url(string $path = ''): string {
     if (preg_match('#^https?://#', $path)) return $path;
-    return base_path() . '/' . ltrim($path, '/');
+    $path = ltrim($path, '/');
+    $first = explode('/', explode('?', explode('#', $path)[0])[0])[0];
+    $isFile = $path === '' || $path[0] === '#' || $path[0] === '?' || str_contains($first, '.') || in_array($first, ['assets', 'uploads', 'admin'], true);
+    if ($isFile || pretty_urls()) return base_path() . '/' . $path;
+    // Sin .htaccess: index.php?r=ruta&consulta#ancla
+    $frag = '';
+    if (($p = strpos($path, '#')) !== false) { $frag = substr($path, $p); $path = substr($path, 0, $p); }
+    $query = '';
+    if (($p = strpos($path, '?')) !== false) { $query = '&' . substr($path, $p + 1); $path = substr($path, 0, $p); }
+    return base_path() . '/index.php?r=' . $path . $query . $frag;
 }
 
 function abs_url(string $path = ''): string {
