@@ -1,0 +1,4 @@
+# Solo imágenes; nunca ejecutar scripts aquí
+<FilesMatch "\.(php|phtml|php\d|phar|pl|py|cgi|sh)$">
+Require all denied
+</FilesMatch>

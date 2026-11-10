@@ -1,0 +1,76 @@
+<?php $main = null; foreach ($products as $p) if ($p['status'] === 'disponible') { $main = $p; break; } ?>
+<section id="inicio" class="wrap hero">
+  <div class="hero-a stack">
+    <span class="badge"><?= e(s('hero_badge')) ?></span>
+    <h1 class="h1"><?= e(s('hero_title')) ?><br><span class="red"><?= e(s('hero_title_red')) ?></span></h1>
+    <p class="lead"><?= e(s('hero_text')) ?></p>
+    <p class="script"><?= e(s('hero_tagline')) ?></p>
+    <div class="row">
+      <?php if ($main): ?>
+        <form method="post" action="<?= e(url('carrito')) ?>">
+          <?= csrf_field() ?>
+          <input type="hidden" name="action" value="add">
+          <input type="hidden" name="pid" value="<?= (int)$main['id'] ?>">
+          <input type="hidden" name="edition" value="<?= $main['price_signed'] !== null ? 'firmado' : 'estandar' ?>">
+          <input type="hidden" name="buy" value="1">
+          <button class="btn btn-red btn-lg" type="submit"><?= e(s('hero_button')) ?></button>
+        </form>
+        <?php if ($main['amazon_url']): ?>
+          <a class="btn btn-ghost btn-lg" href="<?= e($main['amazon_url']) ?>" target="_blank" rel="noopener">Ver en Amazon
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
+        <?php endif; ?>
+      <?php endif; ?>
+    </div>
+    <p class="small muted"><?= e(s('hero_note')) ?></p>
+  </div>
+  <div class="hero-b">
+    <img class="hero-cover" src="<?= e(asset(s('hero_image'))) ?>" alt="Portada de <?= e(s('hero_title')) ?>, <?= e(s('hero_title_red')) ?>">
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap-narrow center stack">
+    <p class="quote"><?= e(s('quote')) ?></p>
+    <p class="script"><?= e(s('site_name')) ?></p>
+  </div>
+</section>
+
+<section id="sobre" class="wrap section split center-y">
+  <div class="split-a"><img class="about-img" src="<?= e(asset(s('about_image'))) ?>" alt="<?= e(s('site_name')) ?>" loading="lazy"></div>
+  <div class="split-b stack">
+    <span class="kicker"><?= e(s('about_kicker')) ?></span>
+    <h2 class="h2"><?= e(s('about_title')) ?></h2>
+    <p class="sub"><?= e(s('about_subtitle')) ?></p>
+    <div class="lead rich"><?= s('about_text') ?></div>
+    <div class="row">
+      <a class="btn btn-light" href="<?= e(url('facilitacion')) ?>">Conoce la facilitación</a>
+      <a class="btn btn-ghost" href="<?= e(url('escritos')) ?>">Leer escritos</a>
+    </div>
+  </div>
+</section>
+
+<section id="libros" class="band">
+  <div class="wrap section">
+    <div class="head-row">
+      <div class="stack-sm"><span class="kicker">LIBROS</span><h2 class="h2"><?= e(s('books_title')) ?></h2></div>
+      <a class="link" href="<?= e(url('libros')) ?>">Ir a la tienda →</a>
+    </div>
+    <div class="grid2"><?php foreach ($products as $p) book_card($p); ?></div>
+  </div>
+</section>
+
+<?php require __DIR__ . '/sec_facilitacion.php'; ?>
+
+<?php if ($posts): ?>
+<section class="band">
+  <div class="wrap section">
+    <div class="head-row">
+      <div class="stack-sm"><span class="kicker">ESCRITOS Y VIDEOS</span><h2 class="h2">Lo más reciente</h2></div>
+      <a class="link" href="<?= e(url('escritos')) ?>">Ver todo →</a>
+    </div>
+    <div class="grid3"><?php foreach ($posts as $p) post_card($p); ?></div>
+  </div>
+</section>
+<?php endif; ?>
+
+<?php require __DIR__ . '/sec_contacto.php'; ?>
