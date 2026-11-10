@@ -34,7 +34,21 @@ function db(): PDO {
         exit('No se pudo conectar a la base de datos. Revisa inc/config.php. (' . htmlspecialchars($e->getMessage()) . ')');
     }
     install_if_needed($pdo);
+    migrate($pdo);
     return $pdo;
+}
+
+// Actualizaciones para sitios ya instalados (se aplican una sola vez).
+function migrate(PDO $pdo): void {
+    $v = (int)$pdo->query("SELECT v FROM settings WHERE k = 'schema_version'")->fetchColumn();
+    if ($v >= 2) return;
+    // v2: correcciones del cliente (precio de Amazon, redes, ocultar plática)
+    $pdo->exec("UPDATE products SET price = 19.99 WHERE slug = 'ecos-del-pasado' AND price = 20.99");
+    $set = $pdo->prepare("INSERT INTO settings (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = IF(v IS NULL OR v = '', VALUES(v), v)");
+    $set->execute(['facebook_url', 'https://www.facebook.com/JoseLuisCornejoEcos/']);
+    $set->execute(['youtube_url', 'https://www.youtube.com/@Joelouiscorne']);
+    $pdo->exec("INSERT INTO settings (k, v) VALUES ('talk_show', '0') ON DUPLICATE KEY UPDATE v = '0'");
+    $pdo->exec("INSERT INTO settings (k, v) VALUES ('schema_version', '2') ON DUPLICATE KEY UPDATE v = '2'");
 }
 
 function install_if_needed(PDO $pdo): void {
@@ -111,13 +125,14 @@ function install_if_needed(PDO $pdo): void {
     // Datos iniciales
     $ins = $pdo->prepare('INSERT INTO settings (k, v) VALUES (?, ?)');
     foreach (default_settings() as $k => $v) $ins->execute([$k, $v]);
+    $ins->execute(['schema_version', '2']);
     $ins->execute(['admin_password', password_hash(config()['admin_initial_password'] ?? 'admin123', PASSWORD_DEFAULT)]);
 
     $p = $pdo->prepare('INSERT INTO products (slug,title,description,image,price,price_signed,amazon_url,status,sort) VALUES (?,?,?,?,?,?,?,?,?)');
     $p->execute([
         'ecos-del-pasado', 'Ecos del pasado: voces del silencio',
         '35 capítulos de poema y reflexión sobre el amor, los vínculos, la ausencia y lo que queda después de una ruptura.',
-        'assets/img/portada.webp', 20.99, 29.99, 'https://www.amazon.com/dp/B0HNT4YBQP', 'disponible', 1,
+        'assets/img/portada.webp', 19.99, 29.99, 'https://www.amazon.com/dp/B0HNT4YBQP', 'disponible', 1,
     ]);
     $p->execute([
         'conexiones-eternas', 'Conexiones Eternas',
@@ -139,11 +154,11 @@ function default_settings(): array {
         'meta_description' => 'José Luis Cornejo, facilitador y autor de «Ecos del pasado: voces del silencio». Desarrollo personal transgeneracional y sistémico.',
         'whatsapp' => '12526734147',
         'whatsapp_label' => 'WhatsApp Business · 1-252-673-4147',
-        'facebook_url' => '',
+        'facebook_url' => 'https://www.facebook.com/JoseLuisCornejoEcos/',
         'facebook_label' => 'Facebook · José Luis Cornejo: Ecos del Pasado, Voces del Silencio',
         'instagram_url' => 'https://www.instagram.com/joseluiscornejooficial',
         'instagram_label' => 'Instagram · @joseluiscornejooficial',
-        'youtube_url' => '',
+        'youtube_url' => 'https://www.youtube.com/@Joelouiscorne',
         'youtube_label' => 'YouTube · Joe louis corne',
         'footer_note' => 'Facilitador en desarrollo personal. No es un servicio clínico.',
         // Inicio
@@ -173,6 +188,7 @@ function default_settings(): array {
         'fac_c2_text' => 'Una mirada transgeneracional a lo que llega de nuestra historia familiar.',
         'fac_c3_title' => 'Soltar en paz',
         'fac_c3_text' => 'Cerrar ciclos con respeto por lo vivido.',
+        'talk_show' => '0',
         'talk_kicker' => 'PLÁTICA GRATUITA',
         'talk_title' => 'Los vínculos que permanecen después de una ruptura',
         'talk_text' => 'Lo que queda cuando una relación termina, cómo poner orden, honrar lo que fue y soltar en paz, sin cortar a las personas.',

@@ -19,6 +19,7 @@
       </div>
     <?php endfor; ?>
   </div>
+  <?php if (s('talk_show') === '1'): ?>
   <div class="cta-red">
     <div class="cta-text">
       <span class="kicker-sm light"><?= e(s('talk_kicker')) ?></span>
@@ -27,4 +28,5 @@
     </div>
     <a class="btn btn-white btn-lg" href="<?= e(whatsapp_link('Hola, quiero reservar mi lugar en la plática: ' . s('talk_title'))) ?>" target="_blank" rel="noopener"><?= e(s('talk_button')) ?></a>
   </div>
+  <?php endif; ?>
 </section>

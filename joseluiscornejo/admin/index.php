@@ -98,6 +98,7 @@ $pages = [
         ['fac_c1_title', 'Tarjeta 1 — título', 'text'], ['fac_c1_text', 'Tarjeta 1 — texto', 'textarea'],
         ['fac_c2_title', 'Tarjeta 2 — título', 'text'], ['fac_c2_text', 'Tarjeta 2 — texto', 'textarea'],
         ['fac_c3_title', 'Tarjeta 3 — título', 'text'], ['fac_c3_text', 'Tarjeta 3 — texto', 'textarea'],
+        ['talk_show', 'Plática', 'toggle'],
         ['talk_kicker', 'Plática — etiqueta', 'text'],
         ['talk_title', 'Plática — título', 'text'],
         ['talk_text', 'Plática — texto', 'textarea'],
@@ -344,6 +345,9 @@ case 'paginas':
       <?php foreach ($pages[$g][1] as [$k, $label, $type]):
         if ($type === 'rich'):
           rich_field($k, $label, s($k));
+        elseif ($type === 'toggle'): ?>
+          <input type="hidden" name="<?= e($k) ?>" value="0"><label class="chk"><input type="checkbox" name="<?= e($k) ?>" value="1" <?= s($k) === '1' ? 'checked' : '' ?>> Mostrar la sección de plática gratuita</label>
+        <?php
         elseif ($type === 'image'): ?>
           <div class="fld"><span class="lbl"><?= e($label) ?></span>
             <div class="img-row">
