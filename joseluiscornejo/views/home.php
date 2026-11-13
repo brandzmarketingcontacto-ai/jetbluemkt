@@ -1,4 +1,6 @@
 <?php $main = null; foreach ($products as $p) if ($p['status'] === 'disponible') { $main = $p; break; } ?>
+<?php $heroBg = s('hero_bg'); $op = max(0, min(1, (float)str_replace(',', '.', s('hero_bg_opacity', '0.4')))); $blur = max(0, min(40, (int)s('hero_bg_blur', '10'))); ?>
+<div class="hero-band"<?php if ($heroBg): ?> style="--hero-bg:url('<?= e(asset($heroBg)) ?>');--hero-op:<?= $op ?>;--hero-blur:<?= $blur ?>px"<?php endif; ?>>
 <section id="inicio" class="wrap hero">
   <div class="hero-a stack">
     <span class="badge"><?= e(s('hero_badge')) ?></span>
@@ -27,6 +29,7 @@
     <img class="hero-cover" src="<?= e(asset(s('hero_image'))) ?>" alt="Portada de <?= e(s('hero_title')) ?>, <?= e(s('hero_title_red')) ?>">
   </div>
 </section>
+</div>
 
 <section class="band">
   <div class="wrap-narrow center stack">

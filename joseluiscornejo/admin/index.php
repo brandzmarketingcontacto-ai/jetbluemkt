@@ -82,6 +82,9 @@ $pages = [
         ['hero_button', 'Texto del botón de compra', 'text'],
         ['hero_note', 'Nota bajo los botones', 'text'],
         ['hero_image', 'Imagen principal (portada)', 'image'],
+        ['hero_bg', 'Imagen de fondo del banner (se ve tenue detrás del texto)', 'image'],
+        ['hero_bg_opacity', 'Opacidad del fondo: 0 = invisible, 0.4 = sugerido, 1 = completa', 'text'],
+        ['hero_bg_blur', 'Desenfoque del fondo en píxeles (0 = nítido, 10 = sugerido)', 'text'],
         ['quote', 'Cita destacada', 'textarea'],
         ['about_kicker', 'Quién soy — etiqueta', 'text'],
         ['about_title', 'Quién soy — título', 'text'],
@@ -360,7 +363,7 @@ case 'paginas':
             <div class="img-row">
               <?php if (s($k)): ?><img src="<?= e(asset(s($k))) ?>" alt="" class="thumb"><?php endif; ?>
               <input type="file" name="f_<?= e($k) ?>" accept="image/*" aria-label="<?= e($label) ?>">
-              <?php if (s($k) && $k === 'logo'): ?><label class="chk"><input type="checkbox" name="clear_<?= e($k) ?>" value="1"> Quitar</label><?php endif; ?>
+              <?php if (s($k) && in_array($k, ['logo', 'hero_bg'], true)): ?><label class="chk"><input type="checkbox" name="clear_<?= e($k) ?>" value="1"> Quitar</label><?php endif; ?>
             </div>
           </div>
         <?php else: field($k, $label, s($k), $type === 'textarea' ? 'textarea' : ($type === 'url' ? 'url' : 'text'));
