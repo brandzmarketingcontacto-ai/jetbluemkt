@@ -11,8 +11,8 @@ La base de datos se instala sola: al abrir el sitio por primera vez se crean tod
 
 ## 2. Base de datos (ya configurada)
 `inc/config.php` ya tiene los datos:
-- Base de datos: `u731277802_jlcdb`
-- Usuario: `u731277802_jlc`
+- Base de datos: `u731277802_jlc1`
+- Usuario: `u731277802_jlc12`
 - Servidor: `localhost`
 
 Si alguna vez cambias la contraseña de MySQL en hPanel (**Bases de datos → Administración**), actualízala también en `inc/config.php`.
