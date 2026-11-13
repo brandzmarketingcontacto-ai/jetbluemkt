@@ -1,0 +1,1 @@
+TipTap (MIT) y ProseMirror (MIT) — https://tiptap.dev

@@ -116,6 +116,27 @@ function youtube_id(string $url): string {
     return '';
 }
 
+// ---------- Vista previa en vivo del editor ----------
+function is_preview(): bool {
+    return !empty($_GET['preview']) && !empty($_SESSION['admin']);
+}
+
+// Texto editable: en vista previa se envuelve para poder actualizarlo en vivo.
+function v(string $k): string {
+    $h = e(s($k));
+    return is_preview() ? '<span data-edit="' . e($k) . '">' . $h . '</span>' : $h;
+}
+
+// HTML enriquecido editable.
+function vr(string $k): string {
+    return is_preview() ? '<div data-edit="' . e($k) . '" data-mode="html">' . s($k) . '</div>' : s($k);
+}
+
+// Atributos para imágenes u otros elementos editables.
+function ea(string $k, string $mode = 'src'): string {
+    return is_preview() ? ' data-edit="' . e($k) . '" data-mode="' . e($mode) . '"' : '';
+}
+
 function is_short(string $url): bool {
     return str_contains($url, '/shorts/');
 }

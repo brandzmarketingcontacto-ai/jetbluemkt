@@ -41,9 +41,9 @@ $f = flash();
       <?php if (s('logo')): ?>
         <img src="<?= e(asset(s('logo'))) ?>" alt="<?= e($siteName) ?>" class="brand-logo">
       <?php else: ?>
-        <span class="brand-name"><?= e($siteName) ?></span>
+        <span class="brand-name"><?= v('site_name') ?></span>
       <?php endif; ?>
-      <span class="brand-tag"><?= e(s('site_tagline')) ?></span>
+      <span class="brand-tag"><?= v('site_tagline') ?></span>
     </a>
     <nav class="mainnav" aria-label="Principal">
       <?php foreach ($nav as $k => [$href, $label]): ?>
@@ -73,7 +73,7 @@ $f = flash();
   </div>
   <div class="wrap footer-in">
     <span>© <?= date('Y') ?> <?= e($siteName) ?> · <?= e($_SERVER['HTTP_HOST'] ?? '') ?></span>
-    <span><?= e(s('footer_note')) ?></span>
+    <span><?= v('footer_note') ?></span>
   </div>
 </footer>
 
@@ -89,5 +89,6 @@ $f = flash();
     </a>
   <?php endforeach; ?>
 </nav>
+<?php if (is_preview()): ?><script src="<?= e(url('assets/js/preview.js')) ?>?v=1"></script><?php endif; ?>
 </body>
 </html>

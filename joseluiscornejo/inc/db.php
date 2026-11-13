@@ -65,9 +65,14 @@ function migrate(PDO $pdo): void {
         }
     }
     if ($v < 4) $pdo->exec("INSERT INTO settings (k, v) VALUES ('schema_version', '4') ON DUPLICATE KEY UPDATE v = '4'");
+    if ($v < 7) {
+        // v7: banner principal en blanco: fondo más suave
+        $pdo->exec("UPDATE settings SET v = '0.15' WHERE k = 'hero_bg_opacity' AND v = '0.4'");
+        $pdo->exec("INSERT INTO settings (k, v) VALUES ('schema_version', '7') ON DUPLICATE KEY UPDATE v = '7'");
+    }
     if ($v < 6) {
         // v6: imagen de fondo del banner principal
-        $pdo->exec("INSERT IGNORE INTO settings (k, v) VALUES ('hero_bg', 'assets/img/portada.webp'), ('hero_bg_opacity', '0.4'), ('hero_bg_blur', '10')");
+        $pdo->exec("INSERT IGNORE INTO settings (k, v) VALUES ('hero_bg', 'assets/img/portada.webp'), ('hero_bg_opacity', '0.15'), ('hero_bg_blur', '10')");
         $pdo->exec("INSERT INTO settings (k, v) VALUES ('schema_version', '6') ON DUPLICATE KEY UPDATE v = '6'");
     }
     if ($v < 5) {
@@ -208,7 +213,7 @@ function default_settings(): array {
         'hero_note' => 'Tapa blanda · Pago seguro con tarjeta · Envío a todo EE. UU.',
         'hero_image' => 'assets/img/portada.webp',
         'hero_bg' => 'assets/img/portada.webp',
-        'hero_bg_opacity' => '0.4',
+        'hero_bg_opacity' => '0.15',
         'hero_bg_blur' => '10',
         'quote' => '«Escribo y acompaño desde lo vivido, no desde la teoría.»',
         'about_kicker' => 'QUIÉN SOY',

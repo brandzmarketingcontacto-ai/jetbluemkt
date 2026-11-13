@@ -1,7 +1,7 @@
 <section class="wrap section-top stack-sm">
   <span class="kicker">LIBROS</span>
-  <h1 class="h2"><?= e(s('books_title')) ?></h1>
-  <p class="lead"><?= e(s('books_text')) ?></p>
+  <h1 class="h2"><?= v('books_title') ?></h1>
+  <p class="lead"><?= v('books_text') ?></p>
 </section>
 
 <?php foreach ($products as $p): ?>

@@ -75,7 +75,7 @@ $pages = [
     ]],
     'inicio' => ['Inicio', [
         ['hero_badge', 'Etiqueta superior', 'text'],
-        ['hero_title', 'Título (blanco)', 'text'],
+        ['hero_title', 'Título (negro)', 'text'],
         ['hero_title_red', 'Título (rojo)', 'text'],
         ['hero_text', 'Texto principal', 'textarea'],
         ['hero_tagline', 'Frase en letra script', 'text'],
@@ -83,8 +83,8 @@ $pages = [
         ['hero_note', 'Nota bajo los botones', 'text'],
         ['hero_image', 'Imagen principal (portada)', 'image'],
         ['hero_bg', 'Imagen de fondo del banner (se ve tenue detrás del texto)', 'image'],
-        ['hero_bg_opacity', 'Opacidad del fondo: 0 = invisible, 0.4 = sugerido, 1 = completa', 'text'],
-        ['hero_bg_blur', 'Desenfoque del fondo en píxeles (0 = nítido, 10 = sugerido)', 'text'],
+        ['hero_bg_opacity', 'Opacidad del fondo', 'range', ['min' => 0, 'max' => 1, 'step' => 0.01]],
+        ['hero_bg_blur', 'Desenfoque del fondo (px)', 'range', ['min' => 0, 'max' => 40, 'step' => 1]],
         ['quote', 'Cita destacada', 'textarea'],
         ['about_kicker', 'Quién soy — etiqueta', 'text'],
         ['about_title', 'Quién soy — título', 'text'],
@@ -118,6 +118,27 @@ $pages = [
     ]],
 ];
 
+$isAjax = ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'fetch';
+function json_out(array $data, int $code = 200): void {
+    http_response_code($code);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($data, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// Grupo de cada campo en el editor visual.
+function field_group(string $k): string {
+    $map = [
+        'hero_bg' => 'Fondo del banner', 'hero_' => 'Banner principal', 'quote' => 'Cita destacada', 'about_' => 'Quién soy',
+        'fac_c' => 'Tarjetas', 'fac_' => 'Encabezado', 'talk_' => 'Plática gratuita',
+        'site_' => 'Identidad', 'logo' => 'Identidad', 'meta_' => 'Identidad', 'whatsapp' => 'WhatsApp Business',
+        'facebook' => 'Redes sociales', 'instagram' => 'Redes sociales', 'youtube' => 'Redes sociales', 'amazon' => 'Redes sociales',
+        'footer' => 'Pie de página', 'books_' => 'Encabezado', 'posts_' => 'Encabezado', 'contact_' => 'Encabezado',
+    ];
+    foreach ($map as $prefix => $g) if (str_starts_with($k, $prefix)) return $g;
+    return 'General';
+}
+
 $secretKeys = ['stripe_sk', 'stripe_whsec', 'paypal_secret', 'smtp_pass'];
 
 // ---------- Acciones ----------
@@ -129,14 +150,17 @@ if ($isPost) {
             case 'save_page':
                 $g = $_POST['g'] ?? '';
                 if (!isset($pages[$g])) break;
-                foreach ($pages[$g][1] as [$k, , $type]) {
+                $images = [];
+                foreach ($pages[$g][1] as $fdef) {
+                    [$k, , $type] = $fdef;
                     if ($type === 'image') {
-                        if ($up = handle_upload('f_' . $k)) set_setting($k, $up);
-                        elseif (!empty($_POST['clear_' . $k])) set_setting($k, '');
-                    } else {
-                        set_setting($k, trim((string)($_POST[$k] ?? '')));
+                        if ($up = handle_upload('f_' . $k)) { set_setting($k, $up); $images[$k] = asset($up); }
+                        elseif (!empty($_POST['clear_' . $k])) { set_setting($k, ''); $images[$k] = ''; }
+                    } elseif (array_key_exists($k, $_POST)) {
+                        set_setting($k, trim((string)$_POST[$k]));
                     }
                 }
+                if ($isAjax) json_out(['ok' => true, 'images' => $images, 'saved_at' => date('H:i')]);
                 flash('Cambios publicados.');
                 back('s=paginas&g=' . $g);
 
@@ -246,6 +270,7 @@ if ($isPost) {
                 back('s=mensajes');
         }
     } catch (Throwable $ex) {
+        if ($isAjax) json_out(['ok' => false, 'error' => $ex->getMessage()], 400);
         flash($ex->getMessage(), 'error');
         back('s=' . $sec);
     }
@@ -282,8 +307,61 @@ function secret_field(string $name, string $label): void {
     field($name, $label, '', 'password', 'autocomplete="new-password" placeholder="' . (s($name) !== '' ? '•••••• guardada (deja vacío para no cambiar)' : 'Sin configurar') . '"');
 }
 function rich_field(string $name, string $label, string $value): void {
-    echo '<div class="fld"><span class="lbl">' . e($label) . '</span><div class="rich-wrap"><div class="rich-ed" data-target="' . e($name) . '">' . $value . '</div></div>'
-        . '<input type="hidden" name="' . e($name) . '" value="' . e($value) . '"></div>';
+    $tools = [
+        ['undo', 'Deshacer', '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>'],
+        ['redo', 'Rehacer', '<path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>'],
+        ['|'],
+        ['h2', 'Título', '<text x="3" y="17" font-size="13" font-weight="700" fill="currentColor" stroke="none" font-family="Inter,sans-serif">H2</text>'],
+        ['h3', 'Subtítulo', '<text x="3" y="17" font-size="13" font-weight="700" fill="currentColor" stroke="none" font-family="Inter,sans-serif">H3</text>'],
+        ['|'],
+        ['bold', 'Negrita', '<path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"/>'],
+        ['italic', 'Cursiva', '<path d="M14 5h-4M14 19h-4M14 5l-4 14"/>'],
+        ['underline', 'Subrayado', '<path d="M7 4v7a5 5 0 0 0 10 0V4M5 20h14"/>'],
+        ['link', 'Enlace', '<path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1"/><path d="M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1"/>'],
+        ['|'],
+        ['bulletList', 'Lista', '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1" fill="currentColor"/><circle cx="4.5" cy="12" r="1" fill="currentColor"/><circle cx="4.5" cy="18" r="1" fill="currentColor"/>'],
+        ['orderedList', 'Lista numerada', '<path d="M10 6h10M10 12h10M10 18h10M4 6h1v4M4 10h2M4 14.5a1 1 0 1 1 2 .5L4 18h2"/>'],
+        ['blockquote', 'Cita', '<path d="M7 7h4v4H8v2a2 2 0 0 0 2 2M15 7h4v4h-3v2a2 2 0 0 0 2 2"/>'],
+        ['|'],
+        ['left', 'Alinear a la izquierda', '<path d="M4 6h16M4 10h10M4 14h16M4 18h10"/>'],
+        ['center', 'Centrar', '<path d="M4 6h16M7 10h10M4 14h16M7 18h10"/>'],
+        ['clear', 'Quitar formato', '<path d="M5 5h14M10 5l-3 14M14 5l1 5M4 20 20 4"/>'],
+    ];
+    echo '<div class="fld" data-key="' . e($name) . '"><span class="lbl">' . e($label) . '</span><div class="tt">';
+    echo '<div class="tt-bar" role="toolbar" aria-label="Formato de ' . e($label) . '">';
+    foreach ($tools as $t) {
+        if ($t[0] === '|') { echo '<span class="tt-sep"></span>'; continue; }
+        echo '<button type="button" class="tt-btn" data-cmd="' . $t[0] . '" title="' . e($t[1]) . '" aria-label="' . e($t[1]) . '"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . $t[2] . '</svg></button>';
+    }
+    echo '</div><div class="tt-ed" data-tt></div><div class="tt-foot"><span data-tt-count></span></div></div>';
+    echo '<input type="hidden" name="' . e($name) . '" value="' . e($value) . '" data-tt-input></div>';
+}
+
+function studio_field(array $fdef): void {
+    [$k, $label, $type] = $fdef;
+    $opt = $fdef[3] ?? [];
+    $val = s($k);
+    if ($type === 'rich') { rich_field($k, $label, $val); return; }
+    echo '<div class="fld" data-key="' . e($k) . '">';
+    if ($type === 'toggle') {
+        echo '<input type="hidden" name="' . e($k) . '" value="0"><label class="switch"><input type="checkbox" name="' . e($k) . '" value="1" data-live ' . ($val === '1' ? 'checked' : '') . '><span class="sw"></span><span>' . e($label === 'Plática' ? 'Mostrar la sección de plática gratuita' : $label) . '</span></label>';
+    } elseif ($type === 'image') {
+        $removable = in_array($k, ['logo', 'hero_bg'], true);
+        echo '<span class="lbl">' . e($label) . '</span><label class="drop' . ($val ? ' has' : '') . '">'
+            . '<img data-thumb src="' . e($val ? asset($val) : '') . '" alt="">'
+            . '<span class="drop-txt"><b>Cambiar imagen</b><small>Arrastra aquí o haz clic · JPG, PNG o WEBP</small></span>'
+            . '<input type="file" name="f_' . e($k) . '" accept="image/*" data-live></label>';
+        if ($removable) echo '<label class="chk mini-chk"><input type="checkbox" name="clear_' . e($k) . '" value="1" data-clear> Quitar imagen</label>';
+    } elseif ($type === 'range') {
+        echo '<label for="f-' . e($k) . '">' . e($label) . ' <output data-out>' . e($val) . '</output></label>'
+            . '<input class="range" id="f-' . e($k) . '" type="range" name="' . e($k) . '" value="' . e($val) . '" min="' . $opt['min'] . '" max="' . $opt['max'] . '" step="' . $opt['step'] . '" data-live>';
+    } else {
+        $id = 'f-' . $k;
+        echo '<label for="' . e($id) . '">' . e($label) . '</label>';
+        if ($type === 'textarea') echo '<textarea class="in" id="' . e($id) . '" name="' . e($k) . '" rows="3" data-live data-autosize>' . e($val) . '</textarea>';
+        else echo '<input class="in" id="' . e($id) . '" name="' . e($k) . '" type="' . ($type === 'url' ? 'url' : 'text') . '" value="' . e($val) . '" data-live>';
+    }
+    echo '</div>';
 }
 ?><!doctype html>
 <html lang="es">
@@ -292,10 +370,9 @@ function rich_field(string $name, string $label, string $value): void {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title><?= e($menu[$activeMenu] ?? 'Panel') ?> · Panel</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Inter:wght@400;500;600;700&family=Allura&display=swap" rel="stylesheet">
-<?php if ($needsEditor): ?><link href="<?= e(url('admin/vendor/quill.snow.css')) ?>" rel="stylesheet"><?php endif; ?>
-<link rel="stylesheet" href="<?= e(url('admin/admin.css')) ?>?v=1">
+<link rel="stylesheet" href="<?= e(url('admin/admin.css')) ?>?v=2">
 </head>
-<body>
+<body class="<?= $activeMenu === 'paginas' ? 'is-studio' : '' ?>">
 <div class="shell">
   <aside class="side">
     <span class="side-name"><?= e(s('site_name')) ?></span>
@@ -345,32 +422,53 @@ case 'inicio':
 <?php break;
 
 case 'paginas':
-    $g = isset($pages[$_GET['g'] ?? '']) ? $_GET['g'] : 'inicio'; ?>
-    <div class="head"><h1>Editar página · <?= e($pages[$g][0]) ?></h1></div>
-    <div class="tabs">
-      <?php foreach ($pages as $k => [$label]): ?><a class="<?= $k === $g ? 'on' : '' ?>" href="<?= e($admin('s=paginas&g=' . $k)) ?>"><?= e($label) ?></a><?php endforeach; ?>
-    </div>
-    <form class="box form" method="post" enctype="multipart/form-data" data-rich>
-      <?= csrf_field() ?><input type="hidden" name="do" value="save_page"><input type="hidden" name="g" value="<?= e($g) ?>">
-      <?php foreach ($pages[$g][1] as [$k, $label, $type]):
-        if ($type === 'rich'):
-          rich_field($k, $label, s($k));
-        elseif ($type === 'toggle'): ?>
-          <input type="hidden" name="<?= e($k) ?>" value="0"><label class="chk"><input type="checkbox" name="<?= e($k) ?>" value="1" <?= s($k) === '1' ? 'checked' : '' ?>> Mostrar la sección de plática gratuita</label>
-        <?php
-        elseif ($type === 'image'): ?>
-          <div class="fld"><span class="lbl"><?= e($label) ?></span>
-            <div class="img-row">
-              <?php if (s($k)): ?><img src="<?= e(asset(s($k))) ?>" alt="" class="thumb"><?php endif; ?>
-              <input type="file" name="f_<?= e($k) ?>" accept="image/*" aria-label="<?= e($label) ?>">
-              <?php if (s($k) && in_array($k, ['logo', 'hero_bg'], true)): ?><label class="chk"><input type="checkbox" name="clear_<?= e($k) ?>" value="1"> Quitar</label><?php endif; ?>
-            </div>
+    $g = isset($pages[$_GET['g'] ?? '']) ? $_GET['g'] : 'inicio';
+    $routes = ['general' => '', 'inicio' => '', 'libros' => 'libros', 'facilitacion' => 'facilitacion', 'escritos' => 'escritos', 'contacto' => 'contacto'];
+    $r = $routes[$g];
+    $previewUrl = url($r === '' ? '?preview=1' : $r . '?preview=1');
+    $groups = [];
+    foreach ($pages[$g][1] as $fdef) $groups[field_group($fdef[0])][] = $fdef; ?>
+    <div class="studio" data-studio>
+      <header class="st-top">
+        <a class="st-back" href="<?= e($admin('s=inicio')) ?>" aria-label="Volver al panel" title="Volver al panel"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+        <div class="st-title"><span class="st-k">Editor visual</span><b><?= e($pages[$g][0]) ?></b></div>
+        <nav class="st-pages" aria-label="Páginas">
+          <?php foreach ($pages as $k => [$label]): ?><a class="<?= $k === $g ? 'on' : '' ?>" href="<?= e($admin('s=paginas&g=' . $k)) ?>" data-nav><?= e($label) ?></a><?php endforeach; ?>
+        </nav>
+        <div class="st-actions">
+          <div class="seg" role="group" aria-label="Tamaño de la vista previa">
+            <button type="button" class="on" data-device="100%" aria-label="Computadora" title="Computadora"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></button>
+            <button type="button" data-device="820px" aria-label="Tableta" title="Tableta"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M11 18h2"/></svg></button>
+            <button type="button" data-device="390px" aria-label="Celular" title="Celular"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg></button>
           </div>
-        <?php else: field($k, $label, s($k), $type === 'textarea' ? 'textarea' : ($type === 'url' ? 'url' : 'text'));
-        endif;
-      endforeach; ?>
-      <div class="actions"><button class="b b-red" type="submit">Publicar cambios</button><a class="b" href="<?= e(url('')) ?>" target="_blank">Ver sitio</a></div>
-    </form>
+          <span class="st-status" data-status aria-live="polite"><i></i><span>Todo publicado</span></span>
+          <button type="button" class="b b-red st-save" data-save disabled>Publicar</button>
+        </div>
+      </header>
+      <div class="st-switch" role="tablist">
+        <button type="button" class="on" data-view="edit">Editar</button>
+        <button type="button" data-view="preview">Vista previa</button>
+      </div>
+      <div class="st-body" data-body>
+        <form class="st-panel" data-form method="post" enctype="multipart/form-data" novalidate>
+          <?= csrf_field() ?><input type="hidden" name="do" value="save_page"><input type="hidden" name="g" value="<?= e($g) ?>">
+          <p class="st-hint"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 4l7 17 2-7 7-2z"/></svg> Haz clic en cualquier texto de la vista previa para editarlo aquí.</p>
+          <?php foreach ($groups as $gname => $fields): ?>
+            <details class="grp" open>
+              <summary><span><?= e($gname) ?></span><small><?= count($fields) ?></small></summary>
+              <div class="grp-body"><?php foreach ($fields as $fdef) studio_field($fdef); ?></div>
+            </details>
+          <?php endforeach; ?>
+        </form>
+        <div class="st-stage">
+          <div class="st-frame" data-frame-wrap>
+            <div class="st-loading" data-loading><span></span></div>
+            <iframe src="<?= e($previewUrl) ?>" title="Vista previa en vivo" data-frame></iframe>
+          </div>
+        </div>
+      </div>
+      <div class="toast" data-toast role="status"></div>
+    </div>
 <?php break;
 
 case 'productos':
@@ -550,14 +648,8 @@ endswitch; ?>
   </main>
 </div>
 <?php if ($needsEditor): ?>
-<script src="<?= e(url('admin/vendor/quill.js')) ?>"></script>
-<script>
-document.querySelectorAll('.rich-ed').forEach(function (el) {
-  var q = new Quill(el, { theme: 'snow', modules: { toolbar: [[{ header: [2, 3, false] }], ['bold', 'italic', 'underline'], [{ list: 'ordered' }, { list: 'bullet' }], ['link', 'blockquote'], ['clean']] } });
-  var hidden = el.closest('.fld').querySelector('input[type=hidden]');
-  q.on('text-change', function () { hidden.value = q.root.innerHTML === '<p><br></p>' ? '' : q.root.innerHTML; });
-});
-</script>
+<script src="<?= e(url('admin/vendor/tiptap.js')) ?>?v=1"></script>
+<script src="<?= e(url('admin/editor.js')) ?>?v=1"></script>
 <?php endif; ?>
 </body>
 </html>
