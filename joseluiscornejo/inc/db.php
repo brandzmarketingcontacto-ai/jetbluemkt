@@ -65,6 +65,11 @@ function migrate(PDO $pdo): void {
         }
     }
     if ($v < 4) $pdo->exec("INSERT INTO settings (k, v) VALUES ('schema_version', '4') ON DUPLICATE KEY UPDATE v = '4'");
+    if ($v < 5) {
+        // v5: nuevo nombre de la página de Facebook
+        $pdo->exec("UPDATE settings SET v = 'Facebook · José Luis Cornejo Autor y Facilitador' WHERE k = 'facebook_label' AND v LIKE '%Ecos del Pasado, Voces del Silencio%'");
+        $pdo->exec("INSERT INTO settings (k, v) VALUES ('schema_version', '5') ON DUPLICATE KEY UPDATE v = '5'");
+    }
 }
 
 function migrate_v2(PDO $pdo): void {
@@ -181,7 +186,7 @@ function default_settings(): array {
         'whatsapp' => '12526734147',
         'whatsapp_label' => 'WhatsApp Business · 1-252-673-4147',
         'facebook_url' => 'https://www.facebook.com/JoseLuisCornejoEcos/',
-        'facebook_label' => 'Facebook · José Luis Cornejo: Ecos del Pasado, Voces del Silencio',
+        'facebook_label' => 'Facebook · José Luis Cornejo Autor y Facilitador',
         'instagram_url' => 'https://www.instagram.com/joseluiscornejooficial',
         'instagram_label' => 'Instagram · @joseluiscornejooficial',
         'youtube_url' => 'https://www.youtube.com/@Joelouiscorne',
