@@ -3,6 +3,9 @@ require_once __DIR__ . '/../inc/helpers.php';
 require_once __DIR__ . '/../inc/mailer.php';
 
 header('X-Frame-Options: SAMEORIGIN');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('X-LiteSpeed-Cache-Control: no-cache');
 header('X-Robots-Tag: noindex');
 
 $sec = $_GET['s'] ?? 'inicio';
@@ -376,7 +379,7 @@ function studio_field(array $fdef): void {
 <div class="shell">
   <aside class="side">
     <span class="side-name"><?= e(s('site_name')) ?></span>
-    <span class="side-k">SUPER ADMIN</span>
+    <span class="side-k">SUPER ADMIN · v<?= APP_VERSION ?></span>
     <nav>
       <?php foreach ($menu as $k => $label): ?>
         <a class="<?= $activeMenu === $k ? 'on' : '' ?>" href="<?= e($admin('s=' . $k)) ?>"><?= e($label) ?><?php if ($k === 'mensajes' && $unread): ?> <span class="dot"><?= $unread ?></span><?php endif; ?></a>
@@ -397,6 +400,22 @@ case 'inicio':
     $subs = (int)db()->query('SELECT COUNT(*) FROM subscribers')->fetchColumn();
     $last = db()->query("SELECT * FROM orders WHERE status <> 'pendiente' ORDER BY id DESC LIMIT 5")->fetchAll(); ?>
     <h1>Resumen</h1>
+    <section class="hero-card">
+      <div class="hero-card-txt">
+        <span class="hc-k">NUEVO · EDITOR VISUAL v<?= APP_VERSION ?></span>
+        <h2>Edita tu sitio viéndolo en vivo</h2>
+        <p>Haz clic en cualquier texto de la página, cámbialo y publícalo. Las fotos, el fondo del banner y los textos con formato se editan igual.</p>
+      </div>
+      <div class="hc-pages">
+        <?php foreach ($pages as $k => [$label]): ?><a class="hc-page" href="<?= e($admin('s=paginas&g=' . $k)) ?>"><span><?= e($label) ?></span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a><?php endforeach; ?>
+      </div>
+    </section>
+    <div class="quick">
+      <a class="qk" href="<?= e($admin('s=escritos')) ?>"><b>+ Video de YouTube</b><span>Pega el enlace y listo</span></a>
+      <a class="qk" href="<?= e($admin('s=escrito&tipo=escrito')) ?>"><b>+ Nuevo escrito</b><span>Poema o reflexión</span></a>
+      <a class="qk" href="<?= e($admin('s=productos')) ?>"><b>Precios y libros</b><span>Estándar y firmado</span></a>
+      <a class="qk" href="<?= e($admin('s=pedidos')) ?>"><b>Pedidos</b><span>Ventas y envíos</span></a>
+    </div>
     <div class="stats">
       <div class="stat"><span>Ventas</span><b><?= money($paid['t']) ?></b></div>
       <div class="stat"><span>Pedidos pagados</span><b><?= (int)$paid['c'] ?></b></div>

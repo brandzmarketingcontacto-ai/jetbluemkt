@@ -116,6 +116,8 @@ function youtube_id(string $url): string {
     return '';
 }
 
+const APP_VERSION = '2.0';
+
 // ---------- Vista previa en vivo del editor ----------
 function is_preview(): bool {
     return !empty($_GET['preview']) && !empty($_SESSION['admin']);

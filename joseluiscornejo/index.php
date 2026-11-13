@@ -3,6 +3,7 @@ require_once __DIR__ . '/inc/helpers.php';
 require_once __DIR__ . '/inc/mailer.php';
 require_once __DIR__ . '/inc/payments.php';
 require_once __DIR__ . '/views/partials.php';
+if (is_preview()) { header('Cache-Control: no-store, max-age=0'); header('X-LiteSpeed-Cache-Control: no-cache'); }
 
 $route = trim($_GET['r'] ?? '', '/');
 $parts = $route === '' ? [''] : explode('/', $route);
